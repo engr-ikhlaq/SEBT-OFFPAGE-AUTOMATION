@@ -6,6 +6,7 @@ import logging
 from dataclasses import replace
 
 import requests
+from selenium.common.exceptions import InvalidSessionIdException
 
 from offpage.browser import BrowserSession, GoogleSearch, PageReader, SearchBlockedError
 from offpage.config import ConfigError, Settings
@@ -13,9 +14,11 @@ from offpage.crawler import SiteCrawler
 from offpage.filters import UrlFilter
 from offpage.parsing import PageParser
 from offpage.pipeline import LeadPipeline
+from offpage.relevance import RelevanceGate
 from offpage.scoring import Scorer
 from offpage.sheets import SheetSink, open_worksheet
 from offpage.storage import SeenStore
+from offpage.validation import EmailValidator
 from offpage.writer import LeadWriter
 
 log = logging.getLogger("offpage")
@@ -55,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     http = requests.Session()
     http.headers["User-Agent"] = USER_AGENT
     parser = PageParser()
+    scorer = Scorer()
     exit_code = 0
 
     with SeenStore(settings.seen_db_path) as store, BrowserSession() as session:
@@ -69,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
             search=GoogleSearch(session, settings.max_pages),
             reader=PageReader(session, parser),
             crawler=SiteCrawler(http, parser),
-            scorer=Scorer(),
+            scorer=scorer,
+            gate=RelevanceGate(scorer),
+            email_validator=EmailValidator(),
             url_filter=UrlFilter(settings.allowed_suffixes),
             store=store,
             writer=writer,
@@ -82,6 +88,9 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = 130
         except SearchBlockedError as exc:
             log.error("%s", exc)
+            exit_code = 1
+        except InvalidSessionIdException:
+            log.error("Chrome closed during the run. Restart main.py to continue.")
             exit_code = 1
         finally:
             _save_pending(writer)

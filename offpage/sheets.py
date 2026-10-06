@@ -44,9 +44,17 @@ class SheetSink:
         self._base_delay = base_delay
 
     def ensure_headers(self) -> None:
-        if not any(self._ws.row_values(1)):
+        """Write the header row if the sheet is empty. Refuse to write into a sheet with other headers."""
+        current = [cell.strip() for cell in self._ws.row_values(1)]
+        if not any(current):
             last_cell = gspread.utils.rowcol_to_a1(1, len(self._headers))
             self._ws.update(range_name=f"A1:{last_cell}", values=[self._headers])
+            return
+        if current[: len(self._headers)] != self._headers:
+            raise SinkError(
+                f"Sheet header {current} does not match expected {self._headers}. "
+                "Use an empty worksheet or fix the header row."
+            )
 
     def append_rows(self, rows: list[list[str | int]]) -> None:
         for attempt in range(1, self._attempts + 1):

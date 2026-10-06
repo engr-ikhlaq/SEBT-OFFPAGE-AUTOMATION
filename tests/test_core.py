@@ -59,8 +59,8 @@ class UrlFilterTests(unittest.TestCase):
 class EmailTests(unittest.TestCase):
     def test_normalises_case_and_drops_asset_names(self):
         self.assertEqual(
-            extract_emails("Mail Info@Example.com logo@2x.png"),
-            frozenset({"info@example.com"}),
+            extract_emails("Mail Info@Blog.com logo@2x.png"),
+            frozenset({"info@blog.com"}),
         )
 
 

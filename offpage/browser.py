@@ -17,6 +17,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from .filters import domain_of
 from .models import PageData, SearchResult
+from .validation import is_plausible_domain
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +113,10 @@ def _result_url(block) -> str | None:
         return None
     site = parts[0]
     url = site if site.startswith("http") else f"https://{site}"
-    return None if _is_google(domain_of(url)) else url
+    host = domain_of(url)
+    if _is_google(host) or not is_plausible_domain(host):
+        return None
+    return url
 
 
 def _type_slowly(element, text: str) -> None:

@@ -1,4 +1,4 @@
-"""Orchestrates one run: search, filter, read, score, record."""
+"""Orchestrates one run: search, filter, read, check relevance, verify emails, score, record."""
 from __future__ import annotations
 
 import logging
@@ -6,12 +6,14 @@ from collections.abc import Iterable, Iterator
 from datetime import date
 from typing import Protocol
 
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import InvalidSessionIdException, WebDriverException
 
 from .config import Settings
 from .filters import UrlFilter
 from .models import ContactInfo, Lead, PageData, SearchResult
+from .relevance import RelevanceGate
 from .scoring import Scorer
+from .validation import EmailValidator, is_plausible_domain
 from .writer import LeadWriter
 
 log = logging.getLogger(__name__)
@@ -31,8 +33,9 @@ class Crawler(Protocol):
     def crawl(self, base_url: str) -> ContactInfo: ...
 
 
-class SeenChecker(Protocol):
+class SeenStore(Protocol):
     def is_seen(self, domain: str) -> bool: ...
+    def mark_seen(self, domains: Iterable[str]) -> None: ...
 
 
 class LeadPipeline:
@@ -44,8 +47,10 @@ class LeadPipeline:
         reader: Reader,
         crawler: Crawler,
         scorer: Scorer,
+        gate: RelevanceGate,
+        email_validator: EmailValidator,
         url_filter: UrlFilter,
-        store: SeenChecker,
+        store: SeenStore,
         writer: LeadWriter,
     ) -> None:
         self._settings = settings
@@ -53,6 +58,8 @@ class LeadPipeline:
         self._reader = reader
         self._crawler = crawler
         self._scorer = scorer
+        self._gate = gate
+        self._emails = email_validator
         self._filter = url_filter
         self._store = store
         self._writer = writer
@@ -68,6 +75,9 @@ class LeadPipeline:
                 log.info("Search: %s", query)
                 try:
                     results = self._search.run(query)
+                except InvalidSessionIdException:
+                    # The browser is gone; every later search would fail too.
+                    raise
                 except WebDriverException:
                     log.exception("Search failed, skipping: %s", query)
                     continue
@@ -77,24 +87,39 @@ class LeadPipeline:
                     if result.domain in run_domains or self._store.is_seen(result.domain):
                         continue
                     run_domains.add(result.domain)
-                    self._writer.add(self._build_lead(keyword, query, result))
+                    lead = self._build_lead(keyword, query, result)
+                    if lead is None:
+                        continue
+                    self._writer.add(lead)
                     queued += 1
         return queued
 
     def _candidates(self, results: Iterable[SearchResult]) -> Iterator[SearchResult]:
         seen: set[str] = set()
         for result in results:
-            if result.domain in seen or not self._filter.allows(result.url):
+            if result.domain in seen or not is_plausible_domain(result.domain):
+                continue
+            if not self._filter.allows(result.url):
                 continue
             seen.add(result.domain)
             yield result
 
-    def _build_lead(self, keyword: str, query: str, result: SearchResult) -> Lead:
+    def _build_lead(self, keyword: str, query: str, result: SearchResult) -> Lead | None:
         try:
             page = self._reader.read(result.url)
+        except InvalidSessionIdException:
+            raise
         except WebDriverException:
-            log.warning("Could not render %s; using HTTP fallback only", result.url)
-            page = PageData()
+            log.warning("Could not render %s; skipping", result.url)
+            self._store.mark_seen([result.domain])
+            return None
+
+        reason = self._gate.rejection_reason(keyword, page)
+        if reason:
+            log.info("Not relevant, skipped %s: %s", result.domain, reason)
+            # Remember the rejection so later runs do not visit the site again.
+            self._store.mark_seen([result.domain])
+            return None
 
         emails = set(page.emails)
         contact_url = ""
@@ -102,10 +127,11 @@ class LeadPipeline:
             info = self._crawler.crawl(result.url)
             emails, contact_url = set(info.emails), info.contact_url
 
+        verified = self._emails.filter_valid(emails)
         score = self._scorer.score(
-            keyword, page, result.domain, bool(emails), bool(contact_url)
+            keyword, page, result.domain, bool(verified), bool(contact_url)
         )
-        log.info("Scored %s: %d (%d email(s))", result.domain, score, len(emails))
+        log.info("Scored %s: %d (%d verified email(s))", result.domain, score, len(verified))
 
         return Lead(
             run_date=date.today().strftime(RUN_DATE_FORMAT),
@@ -113,7 +139,7 @@ class LeadPipeline:
             query=query,
             domain=result.domain,
             url=result.url,
-            emails=tuple(sorted(emails)),
+            emails=tuple(verified),
             contact_url=contact_url,
             snippet=result.snippet,
             score=score,

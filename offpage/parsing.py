@@ -6,19 +6,18 @@ import re
 from bs4 import BeautifulSoup
 
 from .models import PageData
+from .validation import is_valid_email_syntax
 
-EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}")
-
-# Image and asset names such as "logo@2x.png" match the regex but are not addresses.
-NOT_EMAIL_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".js", ".css")
+# Candidate addresses; each one is then checked by is_valid_email_syntax.
+CANDIDATE_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+")
 
 NON_VISIBLE_TAGS = ("script", "style", "noscript")
 MAILTO_PREFIX = "mailto:"
 
 
 def extract_emails(text: str) -> frozenset[str]:
-    found = {match.lower() for match in EMAIL_RE.findall(text or "")}
-    return frozenset(e for e in found if not e.endswith(NOT_EMAIL_SUFFIXES))
+    found = {match.lower() for match in CANDIDATE_EMAIL_RE.findall(text or "")}
+    return frozenset(e for e in found if is_valid_email_syntax(e))
 
 
 class PageParser:

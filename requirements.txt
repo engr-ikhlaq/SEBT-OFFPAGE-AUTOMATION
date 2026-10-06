@@ -4,3 +4,4 @@ selenium
 gspread
 google-auth
 python-dotenv
+dnspython
