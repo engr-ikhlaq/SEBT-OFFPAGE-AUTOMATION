@@ -91,6 +91,30 @@ def _is_google(host: str) -> bool:
     return host == "google.com" or host.endswith(".google.com") or host.startswith("google.")
 
 
+def _result_url(block) -> str | None:
+    """Return the site a result points to, or None if it is not an outside site.
+
+    Google often wraps organic links in /goto redirects, which carry no target
+    address. The breadcrumb (<cite>) above the title shows the site instead,
+    for example "https://example.com › write-for-us". Only its base address is used.
+    """
+    anchors = block.find_elements(By.CSS_SELECTOR, "a[href]")
+    if anchors:
+        href = anchors[0].get_attribute("href") or ""
+        if href.startswith("http") and not _is_google(domain_of(href)):
+            return href
+
+    cites = block.find_elements(By.CSS_SELECTOR, "cite")
+    if not cites:
+        return None
+    parts = cites[0].text.split()
+    if not parts:
+        return None
+    site = parts[0]
+    url = site if site.startswith("http") else f"https://{site}"
+    return None if _is_google(domain_of(url)) else url
+
+
 def _type_slowly(element, text: str) -> None:
     """Type with human-like pauses."""
     for i, char in enumerate(text):
@@ -136,16 +160,10 @@ class GoogleSearch:
         results: list[SearchResult] = []
         blocks = self._session.driver.find_elements(By.CSS_SELECTOR, self.RESULT_SELECTOR)
         for block in blocks:
-            try:
-                href = block.find_element(By.CSS_SELECTOR, "a[href]").get_attribute("href")
-            except NoSuchElementException:
+            url = _result_url(block)
+            if url is None:
                 continue
-            if not href or not href.startswith("http"):
-                continue
-            domain = domain_of(href)
-            if _is_google(domain):
-                continue
-            results.append(SearchResult(url=href, domain=domain, snippet=block.text))
+            results.append(SearchResult(url=url, domain=domain_of(url), snippet=block.text))
         return results
 
     def _go_next(self) -> bool:
