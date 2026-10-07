@@ -87,7 +87,22 @@ class RelevanceGateTests(unittest.TestCase):
 
     def test_off_topic_page_is_rejected(self):
         page = PageData(title="Cheap flights", body="Write for us if you love travel guest posts.")
-        self.assertIn("topic terms", self.gate.rejection_reason("pept", page))
+        self.assertIn("topic not clear", self.gate.rejection_reason("pept", page))
+
+    def test_scattered_generic_words_do_not_pass_as_topic(self):
+        # An SEO-tool page that mentions ads, pinterest and cloaking separately.
+        page = PageData(
+            title="Ad analytics platform",
+            body="Track ads across channels. Pinterest and cloaking detection. Write for us guest post.",
+        )
+        self.assertIn("topic not clear", self.gate.rejection_reason("ads cloaking pinterest", page))
+
+    def test_exact_phrase_in_body_counts_as_topic(self):
+        page = PageData(
+            title="Industry news",
+            body="Our blog covers ads cloaking pinterest policy. Write for us: guest post.",
+        )
+        self.assertIsNone(self.gate.rejection_reason("ads cloaking pinterest", page))
 
     def test_on_topic_page_without_guest_post_wording_is_rejected(self):
         page = PageData(title="Peptide products", body="Buy peptide supplements today.")
@@ -95,7 +110,7 @@ class RelevanceGateTests(unittest.TestCase):
 
     def test_every_term_must_appear(self):
         page = PageData(title="Snapchat tips", body="Write for us: guest post about snapchat.")
-        self.assertIn("cloaking", self.gate.rejection_reason("snapchat cloaking agency", page))
+        self.assertIn("topic not clear", self.gate.rejection_reason("snapchat cloaking agency", page))
 
 
 if __name__ == "__main__":

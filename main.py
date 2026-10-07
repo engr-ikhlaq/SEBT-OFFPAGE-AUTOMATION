@@ -13,7 +13,7 @@ from offpage.config import ConfigError, Settings
 from offpage.crawler import SiteCrawler
 from offpage.filters import UrlFilter
 from offpage.parsing import PageParser
-from offpage.pipeline import LeadPipeline
+from offpage.pipeline import LeadPipeline, SearchFailuresError
 from offpage.relevance import RelevanceGate
 from offpage.scoring import Scorer
 from offpage.sheets import SheetSink, open_worksheet
@@ -87,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
             log.warning("Stopped by user")
             exit_code = 130
         except SearchBlockedError as exc:
+            log.error("%s", exc)
+            exit_code = 1
+        except SearchFailuresError as exc:
             log.error("%s", exc)
             exit_code = 1
         except InvalidSessionIdException:

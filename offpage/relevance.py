@@ -18,12 +18,19 @@ def keyword_terms(keyword: str) -> tuple[str, ...]:
     )
 
 
-class RelevanceGate:
-    """Rejects pages that do not match the keyword's topic or the guest-post intent.
+def _has_term(term: str, text: str) -> bool:
+    """Match at the start of a word, so 'pept' matches 'peptide'."""
+    return re.search(r"\b" + re.escape(term), text) is not None
 
-    Every keyword term must appear in the page (matched at the start of a word,
-    so 'pept' matches 'peptide'). The page must also contain guest-post or
-    contributor wording. Both checks apply to the page text, not the URL.
+
+class RelevanceGate:
+    """Rejects pages that are not about the keyword or do not accept guest posts.
+
+    The topic must be clear. Either every keyword term appears in the title,
+    heading or description, or the exact keyword phrase appears in the body.
+    Scattered generic words in the body (for example 'ads' and 'pinterest'
+    on a software page) are not enough. The page must also contain
+    guest-post or contributor wording.
     """
 
     def __init__(self, scorer: Scorer) -> None:
@@ -34,10 +41,14 @@ class RelevanceGate:
         if not terms:
             return "keyword has no usable terms"
 
-        text = " ".join((page.title, page.h1, page.meta, page.body)).lower()
-        missing = [t for t in terms if re.search(r"\b" + re.escape(t), text) is None]
-        if missing:
-            return "topic terms not found: " + ", ".join(missing)
+        headline = " ".join((page.title, page.h1, page.meta)).lower()
+        body = page.body.lower()
+        phrase = " ".join(keyword.lower().split())
+
+        in_headline = all(_has_term(t, headline) for t in terms)
+        phrase_in_body = _has_term(phrase, body)
+        if not (in_headline or phrase_in_body):
+            return "topic not clear: keyword not in title, heading or description"
 
         if self._scorer.intent_points(page.body) == 0:
             return "no guest-post or contributor wording"

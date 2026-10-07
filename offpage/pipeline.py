@@ -19,6 +19,11 @@ from .writer import LeadWriter
 log = logging.getLogger(__name__)
 
 RUN_DATE_FORMAT = "%d-%b-%Y"
+MAX_CONSECUTIVE_SEARCH_FAILURES = 5
+
+
+class SearchFailuresError(RuntimeError):
+    """Searches keep failing in a row, usually because the network is down."""
 
 
 class Searcher(Protocol):
@@ -67,6 +72,7 @@ class LeadPipeline:
     def run(self) -> int:
         """Process every keyword and query. Returns the number of leads queued."""
         queued = 0
+        failures_in_row = 0
         run_domains: set[str] = set()
 
         for keyword in self._settings.keywords:
@@ -79,8 +85,15 @@ class LeadPipeline:
                     # The browser is gone; every later search would fail too.
                     raise
                 except WebDriverException:
+                    failures_in_row += 1
                     log.exception("Search failed, skipping: %s", query)
+                    if failures_in_row >= MAX_CONSECUTIVE_SEARCH_FAILURES:
+                        raise SearchFailuresError(
+                            f"{failures_in_row} searches failed in a row. "
+                            "Check the network and restart main.py."
+                        )
                     continue
+                failures_in_row = 0
 
                 for result in self._candidates(results):
                     # run_domains covers leads still buffered (not yet marked seen in the store).
