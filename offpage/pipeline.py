@@ -141,9 +141,12 @@ class LeadPipeline:
             emails, contact_url = set(info.emails), info.contact_url
 
         verified = self._emails.filter_valid(emails)
-        score = self._scorer.score(
-            keyword, page, result.domain, bool(verified), bool(contact_url)
-        )
+        if not verified:
+            log.info("No verified email, skipped %s", result.domain)
+            self._store.mark_seen([result.domain])
+            return None
+
+        score = self._scorer.score(keyword, page, result.domain, True, bool(contact_url))
         log.info("Scored %s: %d (%d verified email(s))", result.domain, score, len(verified))
 
         return Lead(
