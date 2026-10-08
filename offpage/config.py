@@ -78,7 +78,10 @@ class Settings:
     worksheet_name: str | None = None
     seen_db_path: Path = Path("seen_domains.db")
     max_pages: int = 5
-    batch_size: int = 8
+    # 1 means every confirmed lead is written to the sheet as soon as it is found.
+    # Raise it to write in batches instead, which makes fewer, larger API calls.
+    batch_size: int = 1
+    crawl_workers: int = 6
     allowed_suffixes: tuple[str, ...] = ()
     keywords: tuple[str, ...] = DEFAULT_KEYWORDS
     queries: tuple[str, ...] = DEFAULT_QUERIES
@@ -90,6 +93,8 @@ class Settings:
             raise ConfigError("max_pages must be at least 1")
         if self.batch_size < 1:
             raise ConfigError("batch_size must be at least 1")
+        if self.crawl_workers < 1:
+            raise ConfigError("crawl_workers must be at least 1")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -103,6 +108,7 @@ class Settings:
             worksheet_name=os.environ.get("WORKSHEET_NAME") or None,
             seen_db_path=Path(os.environ.get("SEEN_DB_PATH", "seen_domains.db")),
             max_pages=int(os.environ.get("MAX_PAGES", "5")),
-            batch_size=int(os.environ.get("BATCH_SIZE", "8")),
+            batch_size=int(os.environ.get("BATCH_SIZE", "1")),
+            crawl_workers=int(os.environ.get("CRAWL_WORKERS", "6")),
             allowed_suffixes=_csv(os.environ.get("ALLOWED_SUFFIXES", "")),
         )

@@ -29,10 +29,14 @@ BLOCKED_PATH_TERMS = (
 )
 
 
-def domain_of(url: str) -> str:
-    """Return the hostname without a leading 'www.'."""
-    host = urlparse(url).hostname or ""
+def strip_www(host: str) -> str:
+    """Remove a leading 'www.' so 'www.example.com' and 'example.com' match."""
     return host.removeprefix("www.")
+
+
+def domain_of(url: str) -> str:
+    """Return the URL's hostname without a leading 'www.'."""
+    return strip_www(urlparse(url).hostname or "")
 
 
 def _host_matches(host: str, domains: Iterable[str]) -> bool:
@@ -54,7 +58,7 @@ class UrlFilter:
 
     def allows(self, url: str) -> bool:
         parts = urlparse(url)
-        host = (parts.hostname or "").removeprefix("www.")
+        host = strip_www(parts.hostname or "")
 
         if parts.scheme not in ("http", "https") or not host:
             return False

@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             settings=settings,
             search=GoogleSearch(session, settings.max_pages),
             reader=PageReader(session, parser),
-            crawler=SiteCrawler(http, parser),
+            crawler=SiteCrawler(http, parser, workers=settings.crawl_workers),
             scorer=scorer,
             gate=RelevanceGate(scorer),
             email_validator=EmailValidator(),
@@ -86,10 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             log.warning("Stopped by user")
             exit_code = 130
-        except SearchBlockedError as exc:
-            log.error("%s", exc)
-            exit_code = 1
-        except SearchFailuresError as exc:
+        except (SearchBlockedError, SearchFailuresError) as exc:
             log.error("%s", exc)
             exit_code = 1
         except InvalidSessionIdException:

@@ -14,6 +14,8 @@ from collections.abc import Iterable
 import dns.exception
 import dns.resolver
 
+from .filters import strip_www
+
 _LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _TLD = r"[a-z]{2,63}"
 _DOMAIN = r"(?:" + _LABEL + r"\.)+" + _TLD
@@ -42,7 +44,7 @@ NO_REPLY_LOCALS = frozenset({
 
 def is_plausible_domain(host: str) -> bool:
     """True for hostnames like 'example.co.uk'. Rejects '1', '50+' and similar."""
-    host = host.lower().removeprefix("www.")
+    host = strip_www(host.lower())
     return len(host) <= 253 and DOMAIN_RE.fullmatch(host) is not None
 
 

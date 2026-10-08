@@ -117,21 +117,23 @@ class LeadPipeline:
             seen.add(result.domain)
             yield result
 
+    def _skip(self, domain: str, reason: str, *, level: int = logging.INFO) -> None:
+        """Log why a domain was rejected and remember it, so it is not visited again."""
+        log.log(level, "Skipped %s: %s", domain, reason)
+        self._store.mark_seen([domain])
+
     def _build_lead(self, keyword: str, query: str, result: SearchResult) -> Lead | None:
         try:
             page = self._reader.read(result.url)
         except InvalidSessionIdException:
             raise
         except WebDriverException:
-            log.warning("Could not render %s; skipping", result.url)
-            self._store.mark_seen([result.domain])
+            self._skip(result.domain, "could not render the page", level=logging.WARNING)
             return None
 
         reason = self._gate.rejection_reason(keyword, page)
         if reason:
-            log.info("Not relevant, skipped %s: %s", result.domain, reason)
-            # Remember the rejection so later runs do not visit the site again.
-            self._store.mark_seen([result.domain])
+            self._skip(result.domain, f"not relevant ({reason})")
             return None
 
         emails = set(page.emails)
@@ -142,8 +144,7 @@ class LeadPipeline:
 
         verified = self._emails.filter_valid(emails)
         if not verified:
-            log.info("No verified email, skipped %s", result.domain)
-            self._store.mark_seen([result.domain])
+            self._skip(result.domain, "no verified email")
             return None
 
         score = self._scorer.score(keyword, page, result.domain, True, bool(contact_url))

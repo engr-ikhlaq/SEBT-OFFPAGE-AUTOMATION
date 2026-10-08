@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin
 
 import requests
@@ -38,20 +39,32 @@ class SiteCrawler:
         parser: PageParser,
         timeout: float = 8,
         paths: tuple[str, ...] = CONTACT_PATHS,
+        workers: int = 6,
     ) -> None:
         self._http = http
         self._parser = parser
         self._timeout = timeout
         self._paths = paths
+        self._workers = max(1, workers)
 
     def crawl(self, base_url: str) -> ContactInfo:
+        """Check the homepage, then every contact path at once.
+
+        Paths are fetched concurrently (they are independent, slow HTTP calls),
+        but results are still read in the original priority order, so the
+        outcome is the same as fetching them one at a time: the first path
+        with an email wins, and the first path with just a contact form is
+        the fallback.
+        """
         home = self._fetch(base_url)
         home_emails = home.emails if home else frozenset()
-        contact_url = ""
 
-        for path in self._paths:
-            url = urljoin(base_url, path)
-            page = self._fetch(url)
+        urls = [urljoin(base_url, path) for path in self._paths]
+        with ThreadPoolExecutor(max_workers=self._workers) as pool:
+            pages = pool.map(self._fetch, urls)
+
+        contact_url = ""
+        for url, page in zip(urls, pages):
             if page is None:
                 continue
             if page.emails:

@@ -20,7 +20,11 @@ class SeenMarker(Protocol):
 
 
 class LeadWriter:
-    """Buffers leads and writes them in batches.
+    """Buffers leads and writes them once there are batch_size of them.
+
+    With batch_size=1 (the application's default, set in Settings), a lead
+    is written the moment it is confirmed, one row at a time. A higher value
+    trades that immediacy for fewer, larger Sheets API calls.
 
     A domain is recorded as seen only after its row is saved. If a write
     fails, the leads stay pending and their domains stay unseen, so the next
