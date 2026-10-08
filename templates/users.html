@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Manage Access</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="app-page">
+
+<div class="topbar">
+    <div>
+        <h1>Manage Access</h1>
+        <div class="sub">Who can log in to this dashboard</div>
+    </div>
+    <div class="nav-links">
+        <a href="{{ url_for('dashboard') }}">&larr; Dashboard</a>
+        <a href="{{ url_for('logout') }}">Log out</a>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+<div class="flash">{{ messages[0] }}</div>
+{% endif %}
+{% endwith %}
+
+<div class="form-card">
+    <h2 style="margin-top:0;">Add someone</h2>
+    <form method="POST">
+        {{ form.csrf_token }}
+        <label class="field-label" for="{{ form.username.id }}">Username</label>
+        {{ form.username(id=form.username.id, placeholder="e.g. a teammate's name") }}
+        {% if form.username.errors %}<div class="field-errors">{{ form.username.errors[0] }}</div>{% endif %}
+        <label class="field-label" for="{{ form.password.id }}">Password</label>
+        {{ form.password(id=form.password.id, placeholder="set a password for them") }}
+        {% if form.password.errors %}<div class="field-errors">{{ form.password.errors[0] }}</div>{% endif %}
+        <button type="submit" class="btn-primary">Add user</button>
+    </form>
+    <div class="hint">Tell them the password yourself (in person, or a secure channel) — it isn't emailed.</div>
+</div>
+
+<div class="panel">
+    <h2>Everyone with access</h2>
+    <table>
+        <thead>
+        <tr><th>Username</th><th>Role</th><th>Added</th><th>Added by</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for u in users %}
+        <tr>
+            <td>{{ u.username }}{% if u.id == current_user_id %} (you){% endif %}</td>
+            <td><span class="role-badge">{{ u.role }}</span></td>
+            <td>{{ u.created_at[:19].replace('T', ' ') }} UTC</td>
+            <td>{{ u.created_by or '—' }}</td>
+            <td>
+                {% if u.id != current_user_id %}
+                <form method="POST" action="{{ url_for('delete_user', user_id=u.id) }}" style="margin:0;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" onclick="return confirm('Remove access for {{ u.username }}?')">Remove</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+</body>
+</html>

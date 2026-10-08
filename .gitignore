@@ -1,0 +1,9 @@
+.env
+# Covers service_account.json, sheet_credentials.json, and any other
+# credential JSON dropped in here — broader than naming one exact filename.
+*.json
+__pycache__/
+*.pyc
+tracking.db
+suppression_list.json
+venv/

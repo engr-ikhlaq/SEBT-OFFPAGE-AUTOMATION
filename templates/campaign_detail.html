@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{ campaign.subject }} — Campaign detail</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-border: #262b36; --text: #e6e8ec;
+    --muted: #8b93a5; --accent: #6366f1; --accent-2: #22c55e; --accent-3: #f59e0b;
+    --accent-4: #ec4899; --danger: #ef4444; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    padding: 32px 40px 80px;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  .back { color: var(--muted); font-size: 13px; }
+  h1 { font-size: 20px; margin: 10px 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 22px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--panel-border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  tr:hover td { background: #1b2030; }
+  .status { display: inline-block; font-size: 10px; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; font-weight: 700; }
+  .status-sent { background: rgba(34,197,94,0.15); color: var(--accent-2); }
+  .status-failed { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .status-pending { background: rgba(139,147,165,0.15); color: var(--muted); }
+  .yes { color: var(--accent-2); font-weight: 700; }
+  .no { color: var(--muted); }
+  .num { text-align: right; }
+</style>
+</head>
+<body>
+  <a class="back" href="{{ url_for('dashboard') }}">&larr; Back to dashboard</a>
+  <h1>{{ campaign.subject }}</h1>
+  <div class="sub">
+    Sent {{ campaign.sent_count }} &middot; Failed {{ campaign.failed_count }} &middot;
+    Invalid {{ campaign.invalid_count }} &middot; Skipped (unsubscribed) {{ campaign.skipped_count }} &middot;
+    {{ campaign.created_at[:19].replace('T',' ') }} UTC
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Status</th>
+          <th class="num">Opens</th>
+          <th>First opened</th>
+          <th class="num">Clicks</th>
+          <th>First clicked</th>
+          <th>Replied</th>
+          <th>Unsubscribed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recipients %}
+        <tr>
+          <td>{{ r.email }}</td>
+          <td><span class="status status-{{ r.status }}">{{ r.status }}</span></td>
+          <td class="num">{{ r.open_count }}</td>
+          <td>{{ r.first_opened_at[:19].replace('T',' ') if r.first_opened_at else '—' }}</td>
+          <td class="num">{{ r.click_count }}</td>
+          <td>{{ r.first_clicked_at[:19].replace('T',' ') if r.first_clicked_at else '—' }}</td>
+          <td>{% if r.replied_at %}<span class="yes">Yes</span>{% else %}<span class="no">No</span>{% endif %}</td>
+          <td>{% if r.unsubscribed_at %}<span class="yes">Yes</span>{% else %}<span class="no">No</span>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">No recipients on this campaign.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

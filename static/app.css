@@ -1,0 +1,166 @@
+/* app.css — shared design tokens and components for every page in this app.
+   Keeping this in one file (instead of a <style> block per template) is
+   what stops the dashboard, login and users pages from drifting into
+   three slightly-different copies of the same look. */
+
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-border: #262b36;
+  --text: #e6e8ec;
+  --muted: #8b93a5;
+  --accent: #6366f1;
+  --accent-2: #22c55e;
+  --accent-3: #f59e0b;
+  --accent-4: #ec4899;
+  --danger: #ef4444;
+  --radius: 14px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: radial-gradient(1200px 600px at 10% -10%, #1b2030 0%, var(--bg) 55%);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+}
+a { color: inherit; }
+
+/* ---- page shells ---- */
+.app-page { padding: 32px 40px 80px; }
+.center-page {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 24px;
+}
+
+/* ---- top navigation, shared by every logged-in page ---- */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+}
+.topbar h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
+.topbar .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.nav-links { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.nav-links a, .nav-links button {
+  font-size: 13px; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--panel-border); background: var(--panel);
+  color: var(--text); text-decoration: none; cursor: pointer; font-family: inherit;
+}
+.nav-links a.primary { background: var(--accent); border-color: var(--accent); }
+.nav-links .badge-count {
+  background: var(--danger); color: #fff; border-radius: 999px;
+  font-size: 11px; padding: 1px 7px; margin-left: 6px;
+}
+
+/* ---- panels & stat cards ---- */
+.panel {
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: var(--radius); padding: 22px; margin-bottom: 24px;
+}
+.panel h2 { font-size: 15px; margin: 0 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.panel h2 form { margin: 0; }
+.panel h2 .actions { display: flex; gap: 8px; }
+.panel h2 button, .panel h2 a.btn {
+  font-size: 12px; padding: 6px 12px; border-radius: 7px;
+  border: 1px solid var(--panel-border); background: #1e2330;
+  color: var(--text); cursor: pointer; text-decoration: none; font-family: inherit;
+}
+.panel h2 button:hover, .panel h2 a.btn:hover { border-color: var(--accent); }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+.stat-card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 18px 20px; position: relative; overflow: hidden; }
+.stat-card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.stat-card .value { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.stat-card .stripe { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.stripe-accent { background: var(--accent); }
+.stripe-green { background: var(--accent-2); }
+.stripe-amber { background: var(--accent-3); }
+.stripe-pink { background: var(--accent-4); }
+.stripe-red { background: var(--danger); }
+
+.two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+/* ---- tables ---- */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--panel-border); }
+th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+tr:hover td { background: #1b2030; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.bar-track { width: 100%; height: 6px; border-radius: 4px; background: #262b36; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; }
+.rate-cell { display: flex; flex-direction: column; gap: 4px; min-width: 90px; }
+.rate-cell span { font-size: 11px; color: var(--muted); }
+
+/* ---- activity feed ---- */
+.activity-list { display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto; }
+.activity-item { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.dot-open { background: var(--accent-3); }
+.dot-click { background: var(--accent-2); }
+.dot-reply { background: var(--accent-4); }
+.activity-item .meta { color: var(--muted); font-size: 11px; }
+
+.badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+.badge-open { background: rgba(245,158,11,0.15); color: var(--accent-3); }
+.badge-click { background: rgba(34,197,94,0.15); color: var(--accent-2); }
+.badge-reply { background: rgba(236,72,153,0.15); color: var(--accent-4); }
+
+.empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+.flash { background: #1e2330; border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px; font-size: 13px; }
+.flash.flash-notice { border-color: var(--accent-4); background: rgba(236,72,153,0.08); }
+.hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+/* ---- lead journey timeline (one row per outreach lead) ---- */
+.journey-list { display: flex; flex-direction: column; gap: 14px; max-height: 480px; overflow-y: auto; }
+.journey-row { display: flex; align-items: center; gap: 14px; font-size: 13px; }
+.journey-row .who { min-width: 180px; }
+.journey-row .who .domain { font-weight: 600; }
+.journey-row .who .email { color: var(--muted); font-size: 11px; }
+.journey-steps { display: flex; align-items: center; gap: 4px; flex: 1; flex-wrap: wrap; }
+.journey-step {
+  display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 9px;
+  border-radius: 999px; border: 1px solid var(--panel-border); color: var(--muted);
+  background: #1b2030; white-space: nowrap;
+}
+.journey-step.done { color: var(--text); border-color: var(--accent-2); background: rgba(34,197,94,0.1); }
+.journey-step.failed { color: #fca5a5; border-color: var(--danger); background: rgba(239,68,68,0.1); }
+.journey-arrow { color: var(--panel-border); font-size: 12px; }
+
+/* ---- forms ---- */
+.form-card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 24px; margin-bottom: 24px; max-width: 420px; }
+label.field-label {
+  display: block; font-size: 12px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 8px; font-weight: 600;
+}
+input[type="password"], input[type="text"], input[type="email"] {
+  width: 100%; background: #0f1115; border: 1px solid var(--panel-border); border-radius: 10px;
+  padding: 12px 14px; color: var(--text); font-size: 14px; font-family: inherit; margin-bottom: 16px;
+}
+input[type="password"]:focus, input[type="text"]:focus, input[type="email"]:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.25);
+}
+.field-errors { color: var(--danger); font-size: 12px; margin-top: -10px; margin-bottom: 10px; }
+button.btn-primary {
+  width: 100%; padding: 12px 18px; border-radius: 10px; border: none;
+  background: var(--accent); color: white; font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: opacity .15s ease; font-family: inherit;
+}
+button.btn-primary:hover { opacity: 0.9; }
+
+/* ---- login card ---- */
+.login-card {
+  width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: var(--radius); padding: 32px 28px; position: relative; overflow: hidden;
+}
+.login-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); }
+.brand {
+  display: flex; align-items: center; gap: 10px; font-weight: 800;
+  color: var(--muted); margin-bottom: 24px; text-transform: uppercase;
+  letter-spacing: 0.08em; font-size: 11px;
+}
+.brand .logo { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, var(--accent), #ec4899); flex-shrink: 0; }
+.login-card h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.02em; }
+.login-card .sub { color: var(--muted); font-size: 13px; margin: 0 0 26px; }
+
+.role-badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(99,102,241,0.15); color: var(--accent); }
