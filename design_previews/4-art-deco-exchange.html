@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Preview: Art Deco Exchange</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poiret+One&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0d0d; --panel: #161616; --rule: #2c2520;
+    --gold: #d4af37; --gold-bright: #f0ce6a; --text: #e8e4da; --muted: #867f6e;
+    --good: #5c9a5c; --bad: #b5503f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'Montserrat', sans-serif; padding: 36px 48px 80px;
+  }
+  h1, h2 { font-family: 'Poiret One', sans-serif; letter-spacing: 0.04em; }
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 0 20px; margin-bottom: 32px;
+    border-bottom: 1px solid var(--gold);
+    background-image: repeating-linear-gradient(90deg, var(--gold) 0 6px, transparent 6px 14px);
+    background-position: bottom; background-size: 100% 2px; background-repeat: no-repeat;
+  }
+  .topbar h1 { font-size: 30px; margin: 0; color: var(--gold-bright); text-transform: uppercase; }
+  .topbar .sub { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .nav-links { display: flex; gap: 20px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .nav-links a { color: var(--gold); text-decoration: none; }
+  .nav-links a:hover { color: var(--gold-bright); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin-bottom: 34px; background: var(--gold); }
+  .stat-card { background: var(--panel); padding: 20px 20px 24px; position: relative; clip-path: polygon(0 0, 100% 0, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
+  .stat-card .label { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .stat-card .value { font-family: 'Poiret One', sans-serif; font-size: 38px; color: var(--gold-bright); }
+
+  .panel { background: var(--panel); border: 1px solid var(--rule); padding: 26px 28px; margin-bottom: 24px; }
+  .panel h2 { font-size: 18px; margin: 0 0 18px; display: flex; justify-content: space-between; align-items: center; color: var(--gold-bright); text-transform: uppercase; }
+  .panel h2 button { font-family: 'Montserrat', sans-serif; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 16px; border: 1px solid var(--gold); background: transparent; color: var(--gold); cursor: pointer; }
+  .panel h2 button:hover { background: var(--gold); color: var(--bg); }
+
+  .journey-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--rule); font-size: 13px; }
+  .journey-row:first-of-type { border-top: none; }
+  .who .domain { font-weight: 600; letter-spacing: 0.02em; }
+  .who .email { font-size: 11px; color: var(--muted); }
+  .steps { display: flex; gap: 6px; margin-left: auto; }
+  .step { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--rule); color: var(--muted); }
+  .step.done { border-color: var(--gold); color: var(--gold-bright); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding: 8px 6px; border-bottom: 1px solid var(--gold); }
+  td { padding: 11px 6px; border-bottom: 1px solid var(--rule); }
+  .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border: 1px solid var(--good); color: var(--good); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>The Exchange</h1>
+    <div class="sub">Outreach &amp; Correspondence Board</div>
+  </div>
+  <div class="nav-links"><a href="#">Compose</a><a href="#">Manage Access</a><a href="#">Log Out</a></div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card"><div class="label">Campaigns</div><div class="value">6</div></div>
+  <div class="stat-card"><div class="label">Sent</div><div class="value">142</div></div>
+  <div class="stat-card"><div class="label">Opened</div><div class="value">58</div></div>
+  <div class="stat-card"><div class="label">Replied</div><div class="value">11</div></div>
+</div>
+
+<div class="panel">
+  <h2>Outreach in Progress <button>Send to New Leads</button></h2>
+  <div class="journey-row">
+    <div class="who"><div class="domain">scientificaminos.com</div><div class="email">hello@scientificaminos.com</div></div>
+    <div class="steps"><span class="step done">Emailed</span><span class="step done">Opened</span><span class="step">Clicked</span><span class="step">Replied</span></div>
+  </div>
+  <div class="journey-row">
+    <div class="who"><div class="domain">intelligentlabs.org</div><div class="email">support@intelligentlabs.org</div></div>
+    <div class="steps"><span class="step done">Emailed</span><span class="step">Opened</span><span class="step">Clicked</span><span class="step">Replied</span></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Manual Campaigns</h2>
+  <table>
+    <tr><th>Subject</th><th>Sent</th><th>Opened</th><th>Status</th></tr>
+    <tr><td>Partnership enquiry</td><td>24</td><td>9</td><td><span class="tag">Active</span></td></tr>
+    <tr><td>Spring roundup</td><td>58</td><td>21</td><td><span class="tag">Active</span></td></tr>
+  </table>
+</div>
+
+</body>
+</html>

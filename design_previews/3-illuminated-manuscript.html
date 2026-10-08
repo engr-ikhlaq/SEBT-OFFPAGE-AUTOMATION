@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Preview: Illuminated Manuscript</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,700;1,500&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #241427; --panel: #2d1a31; --rule: #6b4a2a;
+    --gold: #c9a24b; --gold-bright: #e6c877; --text: #e9ddd0; --muted: #a894a0;
+    --good: #7a9e5e; --bad: #b05a4a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at top, #2f1a35 0%, var(--bg) 60%);
+    color: var(--text); font-family: 'EB Garamond', Georgia, serif;
+    padding: 36px 48px 80px;
+  }
+  h1, h2 { font-family: 'Cormorant', serif; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 18px; margin-bottom: 32px; border-bottom: 2px solid var(--gold); position: relative; }
+  .topbar::after { content: "✦"; position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); color: var(--gold); background: var(--bg); padding: 0 8px; font-size: 14px; }
+  .topbar h1 { font-size: 32px; font-weight: 700; margin: 0; color: var(--gold-bright); letter-spacing: 0.01em; }
+  .topbar .sub { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-top: 4px; font-family: 'EB Garamond', serif; font-style: italic; }
+  .nav-links { display: flex; gap: 18px; font-size: 13px; }
+  .nav-links a { color: var(--gold); text-decoration: none; }
+  .nav-links a:hover { color: var(--gold-bright); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 32px; }
+  .stat-card {
+    background: var(--panel); border: 1px solid var(--rule); padding: 18px 20px;
+    background-image: linear-gradient(135deg, rgba(201,162,75,0.08), transparent 60%);
+  }
+  .stat-card .label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .stat-card .value { font-family: 'Cormorant', serif; font-size: 36px; font-weight: 700; color: var(--gold-bright); }
+
+  .panel { background: var(--panel); border: 1px solid var(--rule); padding: 28px 30px; margin-bottom: 26px; }
+  .panel h2 { font-size: 22px; margin: 0 0 18px; display: flex; justify-content: space-between; align-items: center; color: var(--gold-bright); font-weight: 600; }
+  .panel h2 button { font-family: 'EB Garamond', serif; font-size: 12px; letter-spacing: 0.04em; padding: 8px 16px; border: 1px solid var(--gold); background: transparent; color: var(--gold); cursor: pointer; }
+  .panel h2 button:hover { background: var(--gold); color: var(--bg); }
+
+  .journey-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--rule); font-size: 14px; }
+  .journey-row:first-of-type { border-top: none; }
+  .who .domain { font-weight: 700; color: var(--text); }
+  .who .email { font-size: 12px; color: var(--muted); font-style: italic; }
+  .steps { display: flex; gap: 8px; margin-left: auto; }
+  .step { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 10px; border: 1px solid var(--rule); color: var(--muted); }
+  .step.done { border-color: var(--good); color: var(--good); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 8px 6px; border-bottom: 2px solid var(--gold); font-weight: 500; }
+  td { padding: 11px 6px; border-bottom: 1px solid var(--rule); }
+  .tag { font-size: 10px; text-transform: uppercase; padding: 2px 8px; border: 1px solid var(--good); color: var(--good); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>The Outreach Codex</h1>
+    <div class="sub">A Record of Correspondence</div>
+  </div>
+  <div class="nav-links"><a href="#">Compose</a><a href="#">Manage Access</a><a href="#">Log out</a></div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card"><div class="label">Campaigns</div><div class="value">VI</div></div>
+  <div class="stat-card"><div class="label">Sent</div><div class="value">142</div></div>
+  <div class="stat-card"><div class="label">Opened</div><div class="value">58</div></div>
+  <div class="stat-card"><div class="label">Replied</div><div class="value">11</div></div>
+</div>
+
+<div class="panel">
+  <h2>Outreach in Progress <button>Send to New Leads</button></h2>
+  <div class="journey-row">
+    <div class="who"><div class="domain">scientificaminos.com</div><div class="email">hello@scientificaminos.com</div></div>
+    <div class="steps"><span class="step done">Emailed</span><span class="step done">Opened</span><span class="step">Clicked</span><span class="step">Replied</span></div>
+  </div>
+  <div class="journey-row">
+    <div class="who"><div class="domain">intelligentlabs.org</div><div class="email">support@intelligentlabs.org</div></div>
+    <div class="steps"><span class="step done">Emailed</span><span class="step">Opened</span><span class="step">Clicked</span><span class="step">Replied</span></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Manual Campaigns</h2>
+  <table>
+    <tr><th>Subject</th><th>Sent</th><th>Opened</th><th>Status</th></tr>
+    <tr><td>Partnership enquiry</td><td>24</td><td>9</td><td><span class="tag">Active</span></td></tr>
+    <tr><td>Spring roundup</td><td>58</td><td>21</td><td><span class="tag">Active</span></td></tr>
+  </table>
+</div>
+
+</body>
+</html>

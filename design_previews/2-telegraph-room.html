@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Preview: Telegraph Room</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #15120d; --panel: #1c1712; --rule: #3a2f22;
+    --amber: #e8c46b; --amber-dim: #a9833f; --text: #d8c9a8; --muted: #8a7a5e;
+    --good: #7fae5a; --bad: #c6553f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'IBM Plex Mono', monospace; padding: 36px 48px 80px;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+  }
+  h1, h2 { font-weight: 600; letter-spacing: 0.02em; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--rule); padding-bottom: 16px; margin-bottom: 30px; }
+  .topbar h1 { font-size: 22px; margin: 0; color: var(--amber); text-shadow: 0 0 10px rgba(232,196,107,0.35); }
+  .topbar .sub { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .nav-links { display: flex; gap: 16px; font-size: 12px; }
+  .nav-links a { color: var(--amber-dim); text-decoration: none; }
+  .nav-links a:hover { color: var(--amber); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 30px; }
+  .stat-card {
+    background: var(--panel); border: 1px solid var(--rule); padding: 16px 18px; position: relative;
+  }
+  .stat-card::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 2px; background: var(--amber-dim); }
+  .stat-card .label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .stat-card .value { font-size: 30px; color: var(--amber); text-shadow: 0 0 8px rgba(232,196,107,0.3); }
+
+  .panel { background: var(--panel); border: 1px solid var(--rule); padding: 22px; margin-bottom: 22px; }
+  .panel h2 { font-size: 14px; margin: 0 0 16px; display: flex; justify-content: space-between; align-items: center; color: var(--amber); }
+  .panel h2 button { font-family: inherit; font-size: 11px; letter-spacing: 0.05em; padding: 7px 14px; border: 1px solid var(--amber-dim); background: transparent; color: var(--amber-dim); cursor: pointer; }
+  .panel h2 button:hover { border-color: var(--amber); color: var(--amber); }
+
+  .ticker { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--rule); padding: 9px 0; display: flex; gap: 14px; }
+  .ticker:first-of-type { border-top: none; }
+  .ticker .domain { color: var(--text); font-weight: 600; min-width: 190px; }
+  .ticker .step { color: var(--muted); }
+  .ticker .step.done { color: var(--good); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 8px 6px; border-bottom: 1px solid var(--rule); }
+  td { padding: 10px 6px; border-bottom: 1px solid var(--rule); color: var(--text); }
+  .tag { font-size: 10px; text-transform: uppercase; padding: 2px 8px; border: 1px solid var(--good); color: var(--good); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>&gt; WIRE DESK_</h1>
+    <div class="sub">Outreach Transmission Log</div>
+  </div>
+  <div class="nav-links"><a href="#">COMPOSE</a><a href="#">ACCESS</a><a href="#">LOG OUT</a></div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card"><div class="label">Campaigns</div><div class="value">06</div></div>
+  <div class="stat-card"><div class="label">Sent</div><div class="value">142</div></div>
+  <div class="stat-card"><div class="label">Opened</div><div class="value">058</div></div>
+  <div class="stat-card"><div class="label">Replied</div><div class="value">011</div></div>
+</div>
+
+<div class="panel">
+  <h2>OUTREACH FEED <button>SEND TO NEW LEADS</button></h2>
+  <div class="ticker"><span class="domain">scientificaminos.com</span><span class="step done">EMAILED</span><span class="step done">OPENED</span><span class="step">CLICKED</span><span class="step">REPLIED</span></div>
+  <div class="ticker"><span class="domain">intelligentlabs.org</span><span class="step done">EMAILED</span><span class="step">OPENED</span><span class="step">CLICKED</span><span class="step">REPLIED</span></div>
+</div>
+
+<div class="panel">
+  <h2>MANUAL CAMPAIGNS</h2>
+  <table>
+    <tr><th>Subject</th><th>Sent</th><th>Opened</th><th>Status</th></tr>
+    <tr><td>Partnership enquiry</td><td>24</td><td>9</td><td><span class="tag">ACTIVE</span></td></tr>
+    <tr><td>Spring roundup</td><td>58</td><td>21</td><td><span class="tag">ACTIVE</span></td></tr>
+  </table>
+</div>
+
+</body>
+</html>
