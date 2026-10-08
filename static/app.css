@@ -86,61 +86,82 @@ a { color: inherit; }
 .nav-links a.primary { background: var(--dark); color: #fff; border-color: var(--dark); }
 .nav-links .badge-count { background: var(--danger); color: #fff; border-radius: 999px; font-size: 10px; padding: 1px 6px; margin-left: 5px; }
 
-/* ---- hero banner (your photo + greeting + action pills) ---- */
+/* ---- greeting: plain text on the shell background, above the photo ---- */
+.greeting-block { text-align: center; margin: 4px 0 18px; }
+.greeting-block .hi { font-size: 22px; font-weight: 700; }
+.greeting-block .ask {
+  display: inline-flex; align-items: center; gap: 8px; color: var(--muted);
+  font-size: 14px; margin-top: 8px;
+}
+
+/* ---- hero: just the photo, with the pill toolbar anchored at its bottom ---- */
 .hero {
   position: relative; border-radius: var(--radius-md); overflow: hidden;
-  min-height: 230px; margin-bottom: 22px;
-  background: #0d0f14 url('images/profile-hero.jpg') center 20% / cover no-repeat;
-  display: flex; flex-direction: column; justify-content: space-between;
-  padding: 22px 26px;
+  min-height: 210px; margin-bottom: 22px;
+  background: #0d0f14 url('images/profile-hero.jpg') center 22% / cover no-repeat;
+  display: flex; align-items: flex-end; justify-content: flex-end;
+  padding: 18px 20px;
 }
 .hero::before {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(10,10,14,0.15) 0%, rgba(10,10,14,0.55) 70%, rgba(10,10,14,0.8) 100%);
+  background: linear-gradient(180deg, rgba(10,10,14,0) 55%, rgba(10,10,14,0.65) 100%);
 }
-.hero > * { position: relative; z-index: 1; }
-.hero .greeting { text-align: center; margin-top: 4px; }
-.hero .greeting .hi { color: #fff; font-size: 20px; font-weight: 700; }
-.hero .greeting .ask { color: rgba(255,255,255,0.78); font-size: 15px; margin-top: 6px; }
-.hero-pills { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.hero-pills { position: relative; z-index: 1; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .hero-pill {
   display: flex; align-items: center; gap: 7px; font-size: 12px;
-  background: rgba(255,255,255,0.14); backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,0.18); color: #fff;
+  background: rgba(255,255,255,0.16); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.22); color: #fff;
   padding: 9px 16px; border-radius: 999px;
 }
 .hero-pill.cta { background: var(--accent); border-color: var(--accent); font-weight: 700; }
 
-/* ---- widget grid ---- */
-.widget-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 18px; }
+/* ---- widget grid: top row (3 cards) + a tall gauge card spanning both rows,
+   bottom row (2 wider cards) — matches the reference's dark-card metrics area.
+   Everything here defaults to the dark card style; .panel (further down) stays
+   light, for the detail lists/tables below the metrics. ---- */
+.widget-section {
+  display: grid; grid-template-columns: repeat(3, 1fr) 260px; grid-template-rows: auto auto;
+  gap: 16px; margin-bottom: 18px;
+}
+/* Explicit placement (not :nth-child — this grid mixes .widget and .wide-card
+   siblings, and nth-child/nth-of-type counting breaks across mixed classes). */
+.widget-gauge { grid-row: 1 / 3; grid-column: 4; display: flex; flex-direction: column; }
+.wide-card-trend { grid-column: 1 / 3; }
+.wide-card-mix { grid-column: 3; }
+@media (max-width: 1000px) {
+  .widget-section { grid-template-columns: repeat(2, 1fr); }
+  .widget-gauge { grid-row: auto; grid-column: 1 / 3; }
+  .wide-card-trend, .wide-card-mix { grid-column: 1 / 3; }
+}
+
 .widget {
-  background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius-md);
+  background: var(--dark); color: #fff; border: 1px solid var(--dark); border-radius: var(--radius-md);
   padding: 18px 20px;
 }
-.widget.dark { background: var(--dark); color: #fff; border-color: var(--dark); }
 .widget .w-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .widget .w-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 7px; }
-.widget .w-icon {
-  width: 26px; height: 26px; border-radius: 9px; background: #fff1e8; color: var(--accent);
-  display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;
-}
-.widget.dark .w-icon { background: rgba(255,255,255,0.12); color: #fff; }
-.widget .w-period { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.widget .w-icon { font-size: 15px; color: rgba(255,255,255,0.7); flex-shrink: 0; }
+.widget .w-period { font-size: 10px; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.04em; }
 .widget .w-value { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
-.widget .w-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.widget .w-value.accent { color: var(--accent); }
+.widget .w-sub { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 2px; }
 .widget .sparkline { width: 100%; height: 44px; margin-top: 8px; }
 
-/* ---- radial gauge widget ---- */
-.gauge-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+/* ---- radial gauge widget, with a top icon row and a needle like the reference ---- */
+.gauge-icons { display: flex; justify-content: center; gap: 10px; color: rgba(255,255,255,0.5); font-size: 13px; margin-bottom: 10px; }
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; }
 .gauge-value { font-size: 30px; font-weight: 800; margin-top: -8px; }
-.gauge-label { font-size: 11px; color: rgba(255,255,255,0.65); text-align: center; margin-top: 4px; }
+.gauge-label { font-size: 12px; font-weight: 600; color: #fff; text-align: center; margin-top: 10px; }
+.gauge-sub { font-size: 10px; color: rgba(255,255,255,0.45); text-align: center; margin-top: 2px; }
 
-/* ---- two wide cards row ---- */
-.wide-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-bottom: 18px; }
-@media (max-width: 1000px) { .wide-grid, .widget-grid { grid-template-columns: repeat(2, 1fr); } .shell { grid-template-columns: 1fr; } .sidebar { display: none; } }
-
-.mini-stat-row { display: flex; gap: 22px; margin-top: 14px; }
-.mini-stat .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+/* ---- bottom wide cards: big colored number + badge + footer mini-stats ---- */
+.wide-card .w-badge {
+  display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 9px; border-radius: 999px;
+  background: rgba(255,138,61,0.18); color: var(--accent); margin-left: 8px; vertical-align: middle;
+}
+.mini-stat-row { display: flex; gap: 22px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); }
+.mini-stat { display: flex; align-items: center; gap: 8px; }
+.mini-stat .label { font-size: 10px; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.05em; }
 .mini-stat .value { font-size: 16px; font-weight: 700; }
 
 /* ---- panels (campaigns table, lead journeys) ---- */

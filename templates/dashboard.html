@@ -54,20 +54,22 @@
         <div class="hint" style="margin-bottom:14px;">Reply tracking is off — set IMAP_HOST (and OUTREACH_IMAP_HOST, if outreach uses its own mailbox) in .env to enable it.</div>
         {% endif %}
 
-        <!-- hero -->
+        <!-- greeting: plain text above the photo, not overlaid on it -->
+        <div class="greeting-block">
+            <div class="hi">Hey {{ session.username.split('-')[0]|capitalize }}, here's how outreach is going 👋</div>
+            <div class="ask">&#128269; {{ overview.total_sent or 0 }} sent &middot; {{ overview.total_replies or 0 }} replies &middot; {{ lead_journeys|length }} leads tracked</div>
+        </div>
+
+        <!-- hero: the photo, with the action toolbar anchored at its bottom -->
         <div class="hero">
-            <div class="greeting">
-                <div class="hi">Hey {{ session.username.split('-')[0]|capitalize }}, here's how outreach is going 👋</div>
-                <div class="ask">{{ overview.total_sent or 0 }} sent &middot; {{ overview.total_replies or 0 }} replies &middot; {{ lead_journeys|length }} leads tracked</div>
-            </div>
             <div class="hero-pills">
                 <form method="POST" action="{{ url_for('check_replies') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">🔍 Check for replies</button>
+                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">🔍 Check replies</button>
                 </form>
                 <form method="POST" action="{{ url_for('run_followups') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">⏰ Send due follow-ups</button>
+                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">⏰ Follow-ups</button>
                 </form>
                 <form method="POST" action="{{ url_for('run_outreach') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -76,8 +78,9 @@
             </div>
         </div>
 
-        <!-- stat widgets -->
-        <div class="widget-grid">
+        <!-- stat widgets: 3 small cards + a tall gauge spanning both rows,
+             then 2 wider cards below — all dark, matching the reference -->
+        <div class="widget-section">
             <div class="widget">
                 <div class="w-head">
                     <div class="w-title"><span class="w-icon">&#9993;</span> Sent</div>
@@ -108,34 +111,40 @@
                 <div class="w-value">{{ overview.total_replies or 0 }}</div>
                 <div class="w-sub">{{ overview.total_unsubs or 0 }} unsubscribed</div>
             </div>
-            <div class="widget dark">
+
+            <!-- tall gauge card, spans both rows -->
+            <div class="widget widget-gauge">
+                <div class="gauge-icons">&#9993; &#128065; &#128172; &#8987;</div>
                 <div class="gauge-wrap">
-                    <svg width="120" height="70" viewBox="0 0 120 70">
-                        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="10" stroke-linecap="round"/>
-                        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="#ff8a3d" stroke-width="10" stroke-linecap="round"
+                    <svg width="130" height="75" viewBox="0 0 120 70">
+                        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="9" stroke-linecap="round"/>
+                        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="#ff8a3d" stroke-width="9" stroke-linecap="round"
                               stroke-dasharray="157" stroke-dashoffset="{{ 157 - (157 * reply_rate / 100) }}"/>
+                        <line x1="60" y1="65" x2="{{ '%.1f'|format(needle_x) }}" y2="{{ '%.1f'|format(needle_y) }}" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                        <circle cx="60" cy="65" r="4" fill="#fff"/>
                     </svg>
                     <div class="gauge-value">{{ reply_rate }}%</div>
-                    <div class="gauge-label">Reply rate</div>
                 </div>
+                <div class="gauge-label">Outreach Reply Rate</div>
+                <div class="gauge-sub">{{ overview.total_replies or 0 }} of {{ overview.total_sent or 0 }} sent</div>
             </div>
-        </div>
 
-        <!-- trend chart + campaign mix -->
-        <div class="wide-grid">
-            <div class="widget">
-                <div class="w-head"><div class="w-title">Opens &amp; clicks — last 14 days</div></div>
+            <!-- trend chart (wide) -->
+            <div class="widget wide-card wide-card-trend">
+                <div class="w-head"><div class="w-title">Opens &amp; clicks<span class="w-badge">14 days</span></div></div>
                 <canvas id="trendChart" height="90"></canvas>
             </div>
-            <div class="widget">
-                <div class="w-head"><div class="w-title">Campaign mix</div></div>
+
+            <!-- campaign mix (wide) -->
+            <div class="widget wide-card wide-card-mix">
+                <div class="w-head"><div class="w-title">Campaign Mix<span class="w-badge">All time</span></div></div>
                 <div class="mini-stat-row">
-                    <div class="mini-stat"><div class="label">Manual</div><div class="value">{{ overview.campaign_count or 0 }}</div></div>
-                    <div class="mini-stat"><div class="label">Outreach leads</div><div class="value">{{ lead_journeys|length }}</div></div>
+                    <div class="mini-stat"><div><div class="label">Manual</div><div class="value">{{ overview.campaign_count or 0 }}</div></div></div>
+                    <div class="mini-stat"><div><div class="label">Outreach leads</div><div class="value">{{ lead_journeys|length }}</div></div></div>
                 </div>
                 <div class="mini-stat-row">
-                    <div class="mini-stat"><div class="label">Sent</div><div class="value">{{ overview.total_sent or 0 }}</div></div>
-                    <div class="mini-stat"><div class="label">Failed</div><div class="value">{{ overview.total_failed or 0 }}</div></div>
+                    <div class="mini-stat"><div><div class="label">Sent</div><div class="value">{{ overview.total_sent or 0 }}</div></div></div>
+                    <div class="mini-stat"><div><div class="label">Failed</div><div class="value">{{ overview.total_failed or 0 }}</div></div></div>
                 </div>
             </div>
         </div>
@@ -266,10 +275,10 @@
       },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: '#8b8d98' } } },
+        plugins: { legend: { labels: { color: 'rgba(255,255,255,0.65)' } } },
         scales: {
-          x: { ticks: { color: '#8b8d98' }, grid: { color: '#eceef2' } },
-          y: { ticks: { color: '#8b8d98', precision: 0 }, grid: { color: '#eceef2' }, beginAtZero: true }
+          x: { ticks: { color: 'rgba(255,255,255,0.45)' }, grid: { color: 'rgba(255,255,255,0.08)' } },
+          y: { ticks: { color: 'rgba(255,255,255,0.45)', precision: 0 }, grid: { color: 'rgba(255,255,255,0.08)' }, beginAtZero: true }
         }
       }
     });

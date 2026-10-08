@@ -29,6 +29,7 @@ Dashboard / tracking notes:
 
 import os
 import json
+import math
 from pathlib import Path
 
 from flask import Flask, request, render_template, redirect, url_for, session, flash
@@ -97,6 +98,17 @@ def get_mailer_config() -> MailerConfig:
 def _any_imap_configured() -> bool:
     """True if either the main or the outreach mailbox has IMAP set up."""
     return bool(os.environ.get("IMAP_HOST") or os.environ.get("OUTREACH_IMAP_HOST"))
+
+
+def _gauge_needle(pct: float, cx: float = 60, cy: float = 65, r: float = 50) -> tuple[float, float]:
+    """(x, y) of the needle tip on the semicircle gauge, for a 0-1 fraction.
+
+    The arc runs from (cx-r, cy) at pct=0, through the top (cx, cy-r) at
+    pct=0.5, to (cx+r, cy) at pct=1 — matching the filled-arc stroke so the
+    needle and the colored sweep always agree on which way is "more".
+    """
+    angle = math.pi * (1 - pct)
+    return cx + r * math.cos(angle), cy - r * math.sin(angle)
 
 
 def _sparkline_points(series: list[dict], days: int = 7, width: int = 120, height: int = 36) -> str:
@@ -396,6 +408,7 @@ def dashboard():
 
     opens_by_day = [row for row in timeseries if row["event_type"] == "open"]
     sent_spark = _sparkline_points(sent_timeseries)
+    needle_x, needle_y = _gauge_needle(reply_rate / 100)
     opens_spark = _sparkline_points(opens_by_day)
 
     return render_template(
@@ -407,6 +420,8 @@ def dashboard():
         timeseries=timeseries,
         sent_timeseries=sent_timeseries,
         reply_rate=reply_rate,
+        needle_x=needle_x,
+        needle_y=needle_y,
         recent_activity=recent_activity,
         imap_configured=_any_imap_configured(),
         lead_journeys=db.get_lead_journeys(),
