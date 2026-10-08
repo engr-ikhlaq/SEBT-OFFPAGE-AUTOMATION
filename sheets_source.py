@@ -98,6 +98,18 @@ def read_recipients(skip_already_sent: bool = True) -> list[dict]:
     return recipients
 
 
+def get_lead_counts() -> dict:
+    """Total/sent/failed/pending counts from the sheet, for the dashboard's
+    scraping numbers. Every row with an Email counts as a found lead,
+    regardless of Status."""
+    counts = {"total": 0, "sent": 0, "failed": 0, "pending": 0}
+    for record in read_recipients(skip_already_sent=False):
+        status = str(record.get("Status", "")).strip().lower()
+        counts["total"] += 1
+        counts[status if status in ("sent", "failed") else "pending"] += 1
+    return counts
+
+
 def write_result(row: int, status: str, error: Optional[str] = None):
     """
     Writes Status / Sent Time / Error back to a specific row after a send

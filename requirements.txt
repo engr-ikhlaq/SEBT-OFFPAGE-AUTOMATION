@@ -5,3 +5,9 @@ Flask-WTF==1.2.1
 email-validator==2.2.0
 gspread==6.1.4
 google-auth==2.35.0
+
+# --- lead-scraping (offpage package) ---
+requests
+beautifulsoup4
+selenium
+dnspython

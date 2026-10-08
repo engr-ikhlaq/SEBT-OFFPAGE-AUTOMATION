@@ -29,6 +29,7 @@ Dashboard / tracking notes:
 
 import os
 import json
+import logging
 import math
 from pathlib import Path
 
@@ -43,12 +44,14 @@ from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import auto_outreach
+import scrape_job
 from mailer import MailerConfig, send_batch
 from tracking import tracking_bp
 import db
 import sheets_source
 
 load_dotenv()
+log = logging.getLogger("app")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-key-change-me")
@@ -264,12 +267,12 @@ def index():
         if form.use_google_sheet.data:
             if not sheets_source.is_configured():
                 flash("Google Sheet isn't configured yet — set GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEET_ID in .env.")
-                return render_template("index.html", form=form, results=None)
+                return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status())
             try:
                 sheet_recipients = sheets_source.read_recipients(skip_already_sent=True)
             except Exception as e:
                 flash(f"Could not read Google Sheet: {e}")
-                return render_template("index.html", form=form, results=None)
+                return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status())
 
             for rec in sheet_recipients:
                 email = rec["Email"].strip()
@@ -278,7 +281,7 @@ def index():
 
         if not raw_lines:
             flash("Provide recipients by pasting them, uploading a file, or enabling the Google Sheet source.")
-            return render_template("index.html", form=form, results=None)
+            return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status())
 
         candidates = {line.strip() for line in raw_lines if line.strip()}
 
@@ -374,7 +377,7 @@ def index():
         except Exception as e:
             flash(f"Send failed: {e}")
 
-    return render_template("index.html", form=form, results=results)
+    return render_template("index.html", form=form, results=results, scrape_status=scrape_job.get_status())
 
 
 @app.route("/unsubscribe")
@@ -411,6 +414,13 @@ def dashboard():
     needle_x, needle_y = _gauge_needle(reply_rate / 100)
     opens_spark = _sparkline_points(opens_by_day)
 
+    sheet_configured = sheets_source.is_configured()
+    try:
+        lead_counts = sheets_source.get_lead_counts() if sheet_configured else None
+    except Exception:
+        log.exception("Could not read lead counts from the sheet")
+        lead_counts = None
+
     return render_template(
         "dashboard.html",
         overview=overview,
@@ -426,7 +436,8 @@ def dashboard():
         imap_configured=_any_imap_configured(),
         lead_journeys=db.get_lead_journeys(),
         unseen_replies=db.get_unseen_reply_count(),
-        sheet_configured=sheets_source.is_configured(),
+        sheet_configured=sheet_configured,
+        lead_counts=lead_counts,
         is_owner=require_owner(),
     )
 
@@ -472,6 +483,73 @@ def run_followups():
         flash(f"Follow-up run failed: {e}")
 
     return redirect(url_for("dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Lead scraping (JSON API, driven by fetch() from index.html — a real scrape
+# runs for a while, so these never block a page load; the page polls
+# /scrape/status instead).
+# ---------------------------------------------------------------------------
+
+def _require_login_json():
+    """JSON equivalent of require_login() — redirecting an AJAX call to a
+    login page would just leave the fetch() holding useless HTML."""
+    return None if require_login() else ({"error": "login required"}, 401)
+
+
+@app.route("/scrape/status")
+def scrape_status():
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    return scrape_job.get_status()
+
+
+@app.route("/scrape/start", methods=["POST"])
+def scrape_start():
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    keyword = (request.get_json(silent=True) or {}).get("keyword", "").strip()
+    if not keyword:
+        return {"error": "Enter a target keyword first."}, 400
+    if not sheets_source.is_configured():
+        return {"error": "Google Sheet isn't configured — set GOOGLE_SHEET_ID in .env."}, 400
+    if not scrape_job.start(keyword):
+        return {"error": "A scrape is already running."}, 409
+    return scrape_job.get_status()
+
+
+@app.route("/scrape/continue", methods=["POST"])
+def scrape_continue():
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    if not scrape_job.continue_scraping():
+        return {"error": "Nothing is waiting on a decision right now."}, 409
+    return scrape_job.get_status()
+
+
+@app.route("/scrape/stop", methods=["POST"])
+def scrape_stop():
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    scrape_job.stop()
+    return scrape_job.get_status()
+
+
+@app.route("/scrape/send-now", methods=["POST"])
+def scrape_send_now():
+    """The "send emails instead" half of the after-batch decision."""
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    try:
+        result = auto_outreach.send_pending_leads(get_public_base_url())
+    except Exception as exc:
+        return {"error": str(exc)}, 500
+    scrape_job.stop()  # don't let a later "continue" click resume after this
+    return {
+        "sent": len(result["sent"]),
+        "failed": len(result["failed"]),
+        "skipped": len(result["skipped"]),
+    }
 
 
 @app.route("/dashboard/campaign/<int:campaign_id>")

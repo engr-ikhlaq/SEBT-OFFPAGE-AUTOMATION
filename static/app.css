@@ -256,3 +256,27 @@ button.btn-primary:hover { opacity: 0.88; }
 .login-card .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
 
 .role-badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #fff1e8; color: var(--accent); }
+
+/* ---- decision popup: same dark-card language as the gauge/stat widgets ---- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(10,10,14,0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;
+}
+.modal-card {
+  background: var(--dark); color: #fff; border-radius: var(--radius-lg);
+  padding: 32px; max-width: 420px; width: 100%;
+  box-shadow: 0 40px 80px -20px rgba(0,0,0,0.5); text-align: center;
+}
+.modal-card h3 { margin: 0 0 10px; font-size: 20px; }
+.modal-card p { color: rgba(255,255,255,0.65); font-size: 14px; line-height: 1.6; margin: 0 0 26px; }
+.modal-actions { display: flex; flex-direction: column; gap: 10px; }
+.modal-actions button {
+  width: 100%; padding: 13px 18px; border-radius: var(--radius-sm); border: none;
+  font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.modal-btn-primary { background: var(--accent); color: #fff; }
+.modal-btn-primary:hover { opacity: 0.9; }
+.modal-btn-secondary { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2) !important; }
+.modal-btn-secondary:hover { background: rgba(255,255,255,0.16); }
+.modal-btn-ghost { background: transparent; color: rgba(255,255,255,0.5); font-weight: 600 !important; }
+.modal-btn-ghost:hover { color: rgba(255,255,255,0.8); }

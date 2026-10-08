@@ -149,6 +149,33 @@
             </div>
         </div>
 
+        <!-- scraped-lead numbers, from the Keywords sheet -->
+        <div class="widget-section" style="grid-template-columns: repeat(4, 1fr); grid-template-rows: auto;">
+            <div class="widget">
+                <div class="w-head"><div class="w-title"><span class="w-icon">&#128269;</span> Leads scraped</div></div>
+                <div class="w-value">{{ lead_counts.total if lead_counts is not none else '—' }}</div>
+                <div class="w-sub">in the Keywords sheet</div>
+            </div>
+            <div class="widget">
+                <div class="w-head"><div class="w-title"><span class="w-icon">&#9203;</span> Awaiting outreach</div></div>
+                <div class="w-value accent">{{ lead_counts.pending if lead_counts is not none else '—' }}</div>
+                <div class="w-sub">not yet emailed</div>
+            </div>
+            <div class="widget">
+                <div class="w-head"><div class="w-title"><span class="w-icon">&#9993;</span> Emailed</div></div>
+                <div class="w-value">{{ lead_counts.sent if lead_counts is not none else '—' }}</div>
+                <div class="w-sub">outreach sent</div>
+            </div>
+            <div class="widget">
+                <div class="w-head"><div class="w-title"><span class="w-icon">&#9888;</span> Send failed</div></div>
+                <div class="w-value">{{ lead_counts.failed if lead_counts is not none else '—' }}</div>
+                <div class="w-sub">needs a look</div>
+            </div>
+        </div>
+        {% if lead_counts is none %}
+        <div class="hint" style="margin-top:-10px; margin-bottom:18px;">Google Sheet isn't connected — set GOOGLE_SHEET_ID in .env to see scraped-lead numbers.</div>
+        {% endif %}
+
         <!-- lead journeys + recent activity -->
         <div class="two-col">
             <div class="panel">
