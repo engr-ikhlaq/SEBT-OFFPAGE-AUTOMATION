@@ -312,14 +312,27 @@ def get_recent_activity(limit: int = 25):
         return [dict(r) for r in rows]
 
 
-def get_all_recipients_for_reply_check():
-    """Recipients that were successfully sent to and don't have a reply logged yet."""
+def get_all_recipients_for_reply_check(only_kind: str = None, exclude_kind: str = None):
+    """Recipients that were successfully sent to and don't have a reply logged yet.
+
+    only_kind/exclude_kind let a caller split this by 'kind' (e.g. checking
+    outreach leads against a different mailbox than everything else) —
+    see reply_checker.py.
+    """
+    query = """
+        SELECT id, campaign_id, email, message_id, sent_at
+        FROM recipients
+        WHERE status='sent' AND message_id IS NOT NULL AND replied_at IS NULL
+    """
+    params: list[str] = []
+    if only_kind:
+        query += " AND kind=?"
+        params.append(only_kind)
+    if exclude_kind:
+        query += " AND kind!=?"
+        params.append(exclude_kind)
     with get_conn() as conn:
-        rows = conn.execute("""
-            SELECT id, campaign_id, email, message_id, sent_at
-            FROM recipients
-            WHERE status='sent' AND message_id IS NOT NULL AND replied_at IS NULL
-        """).fetchall()
+        rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
 

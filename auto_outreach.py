@@ -26,7 +26,6 @@ or already-followed-up rows are skipped automatically.
 from __future__ import annotations
 
 import logging
-import os
 
 import db
 import sheets_source
@@ -38,13 +37,11 @@ FOLLOW_UP_AFTER_HOURS = 24
 
 
 def _outreach_mailer_config() -> MailerConfig:
-    """Same mailbox as everything else, but the guest-post pitch signs off
-    and shows up in "From" under OUTREACH_FROM_NAME (e.g. "Maira") instead
-    of the account's usual FROM_NAME — set once here so both the follow-up
-    and the initial send stay consistent."""
-    cfg = MailerConfig.from_env()
-    cfg.from_name = os.environ.get("OUTREACH_FROM_NAME", cfg.from_name)
-    return cfg
+    """The guest-post pitch's own sending identity (e.g. mairablogwrites@gmail.com),
+    separate from whatever account sends everything else. Only the OUTREACH_*
+    values that actually differ need to be set — anything left unset falls
+    back to the main SMTP_*/FROM_* config (see MailerConfig.from_env)."""
+    return MailerConfig.from_env(prefix="OUTREACH_")
 
 OUTREACH_SUBJECT = "Content Contribution Idea - {{domain}}"
 

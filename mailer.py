@@ -57,18 +57,36 @@ class MailerConfig:
         self.max_emails_per_run = int(max_emails_per_run)
 
     @classmethod
-    def from_env(cls) -> "MailerConfig":
-        """The one place that reads SMTP_* / FROM_* / SEND_* out of the environment."""
+    def from_env(cls, prefix: str = "") -> "MailerConfig":
+        """The one place that reads SMTP_* / FROM_* / SEND_* out of the environment.
+
+        With a prefix (e.g. "OUTREACH_"), each name is looked up as
+        "<prefix><name>" first and falls back to the unprefixed name — so a
+        second sending identity (a whole separate mailbox, not just a
+        display name) only needs to set the values that actually differ.
+        """
+        def _get(name: str, default: str | None = None) -> str:
+            if prefix:
+                value = os.environ.get(prefix + name)
+                if value is not None:
+                    return value
+            value = os.environ.get(name, default)
+            if value is None:
+                missing = f"{prefix}{name}" + (f" (or {name})" if prefix else "")
+                raise KeyError(f"{missing} is not set")
+            return value
+
+        from_email = _get("FROM_EMAIL")
         return cls(
-            host=os.environ["SMTP_HOST"],
-            port=os.environ["SMTP_PORT"],
-            username=os.environ["SMTP_USERNAME"],
-            password=os.environ["SMTP_PASSWORD"],
-            from_name=os.environ.get("FROM_NAME", ""),
-            from_email=os.environ["FROM_EMAIL"],
-            reply_to=os.environ.get("REPLY_TO_EMAIL", os.environ["FROM_EMAIL"]),
-            send_delay_seconds=os.environ.get("SEND_DELAY_SECONDS", 3),
-            max_emails_per_run=os.environ.get("MAX_EMAILS_PER_RUN", 150),
+            host=_get("SMTP_HOST"),
+            port=_get("SMTP_PORT"),
+            username=_get("SMTP_USERNAME"),
+            password=_get("SMTP_PASSWORD"),
+            from_name=_get("FROM_NAME", ""),
+            from_email=from_email,
+            reply_to=_get("REPLY_TO_EMAIL", from_email),
+            send_delay_seconds=_get("SEND_DELAY_SECONDS", "3"),
+            max_emails_per_run=_get("MAX_EMAILS_PER_RUN", "150"),
         )
 
 

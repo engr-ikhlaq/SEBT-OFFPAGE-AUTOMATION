@@ -94,6 +94,11 @@ def get_mailer_config() -> MailerConfig:
     return MailerConfig.from_env()
 
 
+def _any_imap_configured() -> bool:
+    """True if either the main or the outreach mailbox has IMAP set up."""
+    return bool(os.environ.get("IMAP_HOST") or os.environ.get("OUTREACH_IMAP_HOST"))
+
+
 def get_public_base_url() -> str:
     """
     Base URL used to build tracking links embedded in outgoing emails.
@@ -373,7 +378,7 @@ def dashboard():
         campaigns=campaigns,
         timeseries=timeseries,
         recent_activity=recent_activity,
-        imap_configured=bool(os.environ.get("IMAP_HOST")),
+        imap_configured=_any_imap_configured(),
         lead_journeys=db.get_lead_journeys(),
         unseen_replies=db.get_unseen_reply_count(),
         sheet_configured=sheets_source.is_configured(),
@@ -442,7 +447,7 @@ def check_replies():
     if not require_login():
         return redirect(url_for("login"))
 
-    if not os.environ.get("IMAP_HOST"):
+    if not _any_imap_configured():
         flash("IMAP_HOST is not set in .env — reply checking is not configured.")
         return redirect(url_for("dashboard"))
 
