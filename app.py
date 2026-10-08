@@ -99,6 +99,24 @@ def _any_imap_configured() -> bool:
     return bool(os.environ.get("IMAP_HOST") or os.environ.get("OUTREACH_IMAP_HOST"))
 
 
+def _sparkline_points(series: list[dict], days: int = 7, width: int = 120, height: int = 36) -> str:
+    """SVG <polyline points="..."> for a day-count series, oldest first.
+
+    Pads with zeros on the left so a brand-new app still draws a flat line
+    instead of a single point, and never divides by zero when every count
+    (or the whole series) is empty.
+    """
+    counts = [row["n"] for row in series[-days:]]
+    counts = [0] * (days - len(counts)) + counts
+    peak = max(counts) or 1
+    step = width / max(len(counts) - 1, 1)
+    points = [
+        f"{i * step:.1f},{height - (count / peak) * (height - 4) - 2:.1f}"
+        for i, count in enumerate(counts)
+    ]
+    return " ".join(points)
+
+
 def get_public_base_url() -> str:
     """
     Base URL used to build tracking links embedded in outgoing emails.
@@ -370,13 +388,25 @@ def dashboard():
     overview = db.get_overview_stats()
     campaigns = db.get_campaigns_summary()
     timeseries = db.get_events_timeseries()
+    sent_timeseries = db.get_sent_timeseries()
     recent_activity = db.get_recent_activity()
+
+    sent = overview.get("total_sent") or 0
+    reply_rate = round((overview.get("total_replies") or 0) / sent * 100) if sent else 0
+
+    opens_by_day = [row for row in timeseries if row["event_type"] == "open"]
+    sent_spark = _sparkline_points(sent_timeseries)
+    opens_spark = _sparkline_points(opens_by_day)
 
     return render_template(
         "dashboard.html",
         overview=overview,
         campaigns=campaigns,
+        sent_spark=sent_spark,
+        opens_spark=opens_spark,
         timeseries=timeseries,
+        sent_timeseries=sent_timeseries,
+        reply_rate=reply_rate,
         recent_activity=recent_activity,
         imap_configured=_any_imap_configured(),
         lead_journeys=db.get_lead_journeys(),

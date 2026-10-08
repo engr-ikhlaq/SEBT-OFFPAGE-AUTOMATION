@@ -286,6 +286,20 @@ def get_campaign_detail(campaign_id: int):
         return {"campaign": dict(campaign), "recipients": [dict(r) for r in recipients]}
 
 
+def get_sent_timeseries(days: int = 7):
+    """Sends per day for the last N days, oldest first — for the dashboard sparklines."""
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT substr(sent_at, 1, 10) AS day, COUNT(*) AS n
+            FROM recipients
+            WHERE status='sent' AND sent_at IS NOT NULL
+            GROUP BY day
+            ORDER BY day DESC
+            LIMIT ?
+        """, (days,)).fetchall()
+        return list(reversed([dict(r) for r in rows]))
+
+
 def get_events_timeseries(days: int = 14):
     """Opens + clicks per day for the last N days, for the trend chart."""
     with get_conn() as conn:

@@ -2,210 +2,251 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Campaign Dashboard</title>
+    <title>Outreach Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
-<body class="app-page">
+<body>
+<div class="shell">
 
-<div class="topbar">
-    <div>
-        <h1>Campaign Dashboard</h1>
-        <div class="sub">Live send, open, click &amp; reply tracking</div>
+    <div class="sidebar">
+        <div class="logo">M</div>
+        <a class="active" href="{{ url_for('dashboard') }}" title="Dashboard">&#8962;</a>
+        <a href="{{ url_for('index') }}" title="Compose">&#9998;</a>
+        {% if is_owner %}<a href="{{ url_for('users') }}" title="Manage access">&#128101;</a>{% endif %}
+        <a href="{{ url_for('logout') }}" title="Log out">&#9211;</a>
     </div>
-    <div class="nav-links">
-        <a href="{{ url_for('index') }}">Compose</a>
-        {% if is_owner %}<a href="{{ url_for('users') }}">Manage Access</a>{% endif %}
-        <form method="POST" action="{{ url_for('check_replies') }}" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit">Check for replies</button>
-        </form>
-        <a href="{{ url_for('logout') }}">Log out</a>
-    </div>
-</div>
 
-{% with messages = get_flashed_messages() %}
-{% if messages %}
-<div class="flash">{{ messages[0] }}</div>
-{% endif %}
-{% endwith %}
-
-{% if unseen_replies %}
-<div class="flash flash-notice">
-    🔔 {{ unseen_replies }} new repl{{ 'y' if unseen_replies == 1 else 'ies' }} since you last checked.
-    <form method="POST" action="{{ url_for('mark_replies_seen') }}" style="display:inline; margin-left:10px;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit">Mark reviewed</button>
-    </form>
-</div>
-{% endif %}
-
-{% if not imap_configured %}
-<div class="hint">Reply tracking is off — set IMAP_HOST / IMAP_USERNAME / IMAP_PASSWORD in .env to enable it. See
-    reply_checker.py.
-</div>
-{% endif %}
-
-<div class="stat-grid">
-    <div class="stat-card">
-        <div class="stripe stripe-accent"></div>
-        <div class="label">Campaigns</div>
-        <div class="value">{{ overview.campaign_count or 0 }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stripe stripe-accent"></div>
-        <div class="label">Emails Sent</div>
-        <div class="value">{{ overview.total_sent or 0 }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stripe stripe-amber"></div>
-        <div class="label">Unique Opens</div>
-        <div class="value">{{ overview.unique_opens or 0 }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stripe stripe-green"></div>
-        <div class="label">Unique Clicks</div>
-        <div class="value">{{ overview.unique_clicks or 0 }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stripe stripe-pink"></div>
-        <div class="label">Replies</div>
-        <div class="value">{{ overview.total_replies or 0 }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stripe stripe-red"></div>
-        <div class="label">Unsubscribed</div>
-        <div class="value">{{ overview.total_unsubs or 0 }}</div>
-    </div>
-</div>
-
-<div class="panel">
-    <h2>
-        Guest-post outreach — auto-sent from the connected sheet
-        <span class="actions">
-            <form method="POST" action="{{ url_for('run_outreach') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" {{ 'disabled' if not sheet_configured }}>Send to new leads now</button>
-            </form>
-            <form method="POST" action="{{ url_for('run_followups') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit">Send due 24h follow-ups</button>
-            </form>
-        </span>
-    </h2>
-    {% if not sheet_configured %}
-    <div class="hint">Google Sheet isn't connected — set GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEET_ID in .env to enable "Send to new leads now".</div>
-    {% endif %}
-    <div class="journey-list">
-        {% for lead in lead_journeys %}
-        <div class="journey-row">
-            <div class="who">
-                <div class="domain">{{ lead.lead_domain or '—' }}</div>
-                <div class="email">{{ lead.email }}</div>
+    <div class="main">
+        <div class="topbar">
+            <div>
+                <div class="brand-line"><b>MailFlow</b> &middot; Outreach</div>
+                <h1>Dashboard</h1>
+                <div class="sub">Live send, open, click &amp; reply tracking</div>
             </div>
-            <div class="journey-steps">
-                <span class="journey-step {{ 'done' if lead.status == 'sent' else 'failed' if lead.status == 'failed' else '' }}">
-                    {{ '✓' if lead.status == 'sent' else '✕' if lead.status == 'failed' else '…' }} Emailed
-                </span>
-                <span class="journey-arrow">&rarr;</span>
-                <span class="journey-step {{ 'done' if lead.open_count }}">{{ '✓' if lead.open_count else '' }} Opened{% if lead.open_count %} ({{ lead.open_count }}){% endif %}</span>
-                <span class="journey-arrow">&rarr;</span>
-                <span class="journey-step {{ 'done' if lead.click_count }}">{{ '✓' if lead.click_count else '' }} Clicked</span>
-                <span class="journey-arrow">&rarr;</span>
-                <span class="journey-step {{ 'done' if lead.replied_at else '' }}">
-                    {{ '✓' if lead.replied_at else '' }} {{ 'Replied' if lead.replied_at else ('Followed up' if lead.followed_up_at else 'Awaiting reply') }}
-                </span>
-                {% if lead.unsubscribed_at %}
-                <span class="journey-arrow">&rarr;</span>
-                <span class="journey-step failed">Unsubscribed</span>
-                {% endif %}
-            </div>
-        </div>
-        {% else %}
-        <div class="empty">No outreach sent yet. Once the sheet has confirmed leads, click "Send to new leads now".</div>
-        {% endfor %}
-    </div>
-</div>
-
-<div class="two-col">
-    <div class="panel">
-        <h2>Opens &amp; clicks — last 14 days</h2>
-        <canvas id="trendChart" height="110"></canvas>
-    </div>
-    <div class="panel">
-        <h2>Recent activity</h2>
-        <div class="activity-list">
-            {% for item in recent_activity %}
-            <div class="activity-item">
-                <div class="dot dot-{{ item.event_type }}"></div>
-                <div>
+            <div style="display:flex; align-items:center; gap:18px;">
+                <div class="nav-links">
+                    {% if unseen_replies %}
+                    <form method="POST" action="{{ url_for('mark_replies_seen') }}" style="display:inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit">🔔 {{ unseen_replies }} new</button>
+                    </form>
+                    {% endif %}
+                </div>
+                <div class="profile-chip">
+                    <div class="avatar">{{ session.username[:1]|upper }}</div>
                     <div>
-                        <span class="badge badge-{{ item.event_type }}">{{ item.event_type }}</span>
-                        {{ item.email }}
-                    </div>
-                    <div class="meta">{{ item.subject }} &middot; {{ item.occurred_at[:19].replace('T', ' ') }} UTC
+                        <div class="who">{{ session.username }}</div>
+                        <div class="role">{{ 'Owner' if session.role == 'owner' else 'Member' }}</div>
                     </div>
                 </div>
             </div>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+        {% endif %}
+        {% endwith %}
+
+        {% if not imap_configured %}
+        <div class="hint" style="margin-bottom:14px;">Reply tracking is off — set IMAP_HOST (and OUTREACH_IMAP_HOST, if outreach uses its own mailbox) in .env to enable it.</div>
+        {% endif %}
+
+        <!-- hero -->
+        <div class="hero">
+            <div class="greeting">
+                <div class="hi">Hey {{ session.username.split('-')[0]|capitalize }}, here's how outreach is going 👋</div>
+                <div class="ask">{{ overview.total_sent or 0 }} sent &middot; {{ overview.total_replies or 0 }} replies &middot; {{ lead_journeys|length }} leads tracked</div>
+            </div>
+            <div class="hero-pills">
+                <form method="POST" action="{{ url_for('check_replies') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">🔍 Check for replies</button>
+                </form>
+                <form method="POST" action="{{ url_for('run_followups') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">⏰ Send due follow-ups</button>
+                </form>
+                <form method="POST" action="{{ url_for('run_outreach') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;" {{ 'disabled' if not sheet_configured }}>&#9993; Send to new leads</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- stat widgets -->
+        <div class="widget-grid">
+            <div class="widget">
+                <div class="w-head">
+                    <div class="w-title"><span class="w-icon">&#9993;</span> Sent</div>
+                    <div class="w-period">7 days</div>
+                </div>
+                <div class="w-value">{{ overview.total_sent or 0 }}</div>
+                <div class="w-sub">{{ overview.total_failed or 0 }} failed</div>
+                <svg class="sparkline" viewBox="0 0 120 36" preserveAspectRatio="none">
+                    <polyline points="{{ sent_spark }}" fill="none" stroke="#ff8a3d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div class="widget">
+                <div class="w-head">
+                    <div class="w-title"><span class="w-icon">&#128065;</span> Opens</div>
+                    <div class="w-period">7 days</div>
+                </div>
+                <div class="w-value">{{ overview.unique_opens or 0 }}</div>
+                <div class="w-sub">{{ overview.unique_clicks or 0 }} unique clicks</div>
+                <svg class="sparkline" viewBox="0 0 120 36" preserveAspectRatio="none">
+                    <polyline points="{{ opens_spark }}" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div class="widget">
+                <div class="w-head">
+                    <div class="w-title"><span class="w-icon">&#128172;</span> Replies</div>
+                    <div class="w-period">All time</div>
+                </div>
+                <div class="w-value">{{ overview.total_replies or 0 }}</div>
+                <div class="w-sub">{{ overview.total_unsubs or 0 }} unsubscribed</div>
+            </div>
+            <div class="widget dark">
+                <div class="gauge-wrap">
+                    <svg width="120" height="70" viewBox="0 0 120 70">
+                        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="10" stroke-linecap="round"/>
+                        <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="#ff8a3d" stroke-width="10" stroke-linecap="round"
+                              stroke-dasharray="157" stroke-dashoffset="{{ 157 - (157 * reply_rate / 100) }}"/>
+                    </svg>
+                    <div class="gauge-value">{{ reply_rate }}%</div>
+                    <div class="gauge-label">Reply rate</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- trend chart + campaign mix -->
+        <div class="wide-grid">
+            <div class="widget">
+                <div class="w-head"><div class="w-title">Opens &amp; clicks — last 14 days</div></div>
+                <canvas id="trendChart" height="90"></canvas>
+            </div>
+            <div class="widget">
+                <div class="w-head"><div class="w-title">Campaign mix</div></div>
+                <div class="mini-stat-row">
+                    <div class="mini-stat"><div class="label">Manual</div><div class="value">{{ overview.campaign_count or 0 }}</div></div>
+                    <div class="mini-stat"><div class="label">Outreach leads</div><div class="value">{{ lead_journeys|length }}</div></div>
+                </div>
+                <div class="mini-stat-row">
+                    <div class="mini-stat"><div class="label">Sent</div><div class="value">{{ overview.total_sent or 0 }}</div></div>
+                    <div class="mini-stat"><div class="label">Failed</div><div class="value">{{ overview.total_failed or 0 }}</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- lead journeys + recent activity -->
+        <div class="two-col">
+            <div class="panel">
+                <h2>Guest-post outreach</h2>
+                {% if not sheet_configured %}
+                <div class="hint">Google Sheet isn't connected — set GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEET_ID in .env.</div>
+                {% endif %}
+                <div class="journey-list">
+                    {% for lead in lead_journeys %}
+                    <div class="journey-row">
+                        <div class="who">
+                            <div class="domain">{{ lead.lead_domain or '—' }}</div>
+                            <div class="email">{{ lead.email }}</div>
+                        </div>
+                        <div class="journey-steps">
+                            <span class="journey-step {{ 'done' if lead.status == 'sent' else 'failed' if lead.status == 'failed' else '' }}">
+                                {{ '✓' if lead.status == 'sent' else '✕' if lead.status == 'failed' else '…' }} Emailed
+                            </span>
+                            <span class="journey-arrow">&rarr;</span>
+                            <span class="journey-step {{ 'done' if lead.open_count }}">{{ '✓' if lead.open_count else '' }} Opened{% if lead.open_count %} ({{ lead.open_count }}){% endif %}</span>
+                            <span class="journey-arrow">&rarr;</span>
+                            <span class="journey-step {{ 'done' if lead.click_count }}">{{ '✓' if lead.click_count else '' }} Clicked</span>
+                            <span class="journey-arrow">&rarr;</span>
+                            <span class="journey-step {{ 'done' if lead.replied_at else '' }}">
+                                {{ '✓' if lead.replied_at else '' }} {{ 'Replied' if lead.replied_at else ('Followed up' if lead.followed_up_at else 'Awaiting reply') }}
+                            </span>
+                            {% if lead.unsubscribed_at %}
+                            <span class="journey-arrow">&rarr;</span>
+                            <span class="journey-step failed">Unsubscribed</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="empty">No outreach sent yet. Once the sheet has confirmed leads, use "Send to new leads" above.</div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="panel">
+                <h2>Recent activity</h2>
+                <div class="activity-list">
+                    {% for item in recent_activity %}
+                    <div class="activity-item">
+                        <div class="dot dot-{{ item.event_type }}"></div>
+                        <div>
+                            <div>
+                                <span class="badge badge-{{ item.event_type }}">{{ item.event_type }}</span>
+                                {{ item.email }}
+                            </div>
+                            <div class="meta">{{ item.subject }} &middot; {{ item.occurred_at[:19].replace('T', ' ') }} UTC</div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="empty">No opens, clicks, or replies logged yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Manual campaigns</h2>
+            {% if campaigns %}
+            <table>
+                <thead>
+                <tr>
+                    <th>Subject</th>
+                    <th>Sent</th>
+                    <th>Open rate</th>
+                    <th>Click rate</th>
+                    <th class="num">Replies</th>
+                    <th class="num">Failed</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for c in campaigns %}
+                {% set sent = c.sent_count or 0 %}
+                {% set open_pct = ((c.opens or 0) / sent * 100) if sent else 0 %}
+                {% set click_pct = ((c.clicks or 0) / sent * 100) if sent else 0 %}
+                <tr>
+                    <td><a href="{{ url_for('campaign_detail', campaign_id=c.id) }}">{{ c.subject }}</a><br>
+                        <span class="meta" style="color:var(--muted); font-size:11px;">{{ c.created_at[:19].replace('T',' ') }} UTC</span>
+                    </td>
+                    <td class="num">{{ sent }}</td>
+                    <td>
+                        <div class="rate-cell">
+                            <span>{{ c.opens or 0 }} ({{ "%.0f"|format(open_pct) }}%)</span>
+                            <div class="bar-track"><div class="bar-fill" style="width:{{ open_pct }}%; background:var(--accent-3);"></div></div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="rate-cell">
+                            <span>{{ c.clicks or 0 }} ({{ "%.0f"|format(click_pct) }}%)</span>
+                            <div class="bar-track"><div class="bar-fill" style="width:{{ click_pct }}%; background:var(--accent-2);"></div></div>
+                        </div>
+                    </td>
+                    <td class="num">{{ c.replies or 0 }}</td>
+                    <td class="num">{{ c.failed_count or 0 }}</td>
+                    <td><a href="{{ url_for('campaign_detail', campaign_id=c.id) }}">Details &rarr;</a></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
             {% else %}
-            <div class="empty">No opens, clicks, or replies logged yet.</div>
-            {% endfor %}
+            <div class="empty">No manual campaigns sent yet. <a href="{{ url_for('index') }}">Send your first one</a>.</div>
+            {% endif %}
         </div>
     </div>
-</div>
-
-<div class="panel">
-    <h2>Manual campaigns</h2>
-    {% if campaigns %}
-    <table>
-        <thead>
-        <tr>
-            <th>Subject</th>
-            <th>Sent</th>
-            <th>Open rate</th>
-            <th>Click rate</th>
-            <th class="num">Replies</th>
-            <th class="num">Failed</th>
-            <th></th>
-        </tr>
-        </thead>
-        <tbody>
-        {% for c in campaigns %}
-        {% set sent = c.sent_count or 0 %}
-        {% set open_pct = ((c.opens or 0) / sent * 100) if sent else 0 %}
-        {% set click_pct = ((c.clicks or 0) / sent * 100) if sent else 0 %}
-        <tr>
-            <td><a href="{{ url_for('campaign_detail', campaign_id=c.id) }}">{{ c.subject }}</a><br>
-                <span class="meta" style="color:var(--muted); font-size:11px;">{{ c.created_at[:19].replace('T',' ') }} UTC</span>
-            </td>
-            <td class="num">{{ sent }}</td>
-            <td>
-                <div class="rate-cell">
-                    <span>{{ c.opens or 0 }} ({{ "%.0f"|format(open_pct) }}%)</span>
-                    <div class="bar-track">
-                        <div class="bar-fill" style="width:{{ open_pct }}%; background:var(--accent-3);"></div>
-                    </div>
-                </div>
-            </td>
-            <td>
-                <div class="rate-cell">
-                    <span>{{ c.clicks or 0 }} ({{ "%.0f"|format(click_pct) }}%)</span>
-                    <div class="bar-track">
-                        <div class="bar-fill" style="width:{{ click_pct }}%; background:var(--accent-2);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="num">{{ c.replies or 0 }}</td>
-            <td class="num">{{ c.failed_count or 0 }}</td>
-            <td><a href="{{ url_for('campaign_detail', campaign_id=c.id) }}">Details &rarr;</a></td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div class="empty">No manual campaigns sent yet. <a href="{{ url_for('index') }}">Send your first one</a>.</div>
-    {% endif %}
 </div>
 
 <script>
@@ -219,32 +260,16 @@
       data: {
         labels: days.length ? days : ['No data yet'],
         datasets: [
-          {
-            label: 'Opens',
-            data: opens.length ? opens : [0],
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245,158,11,0.12)',
-            tension: 0.35,
-            fill: true,
-            pointRadius: 3,
-          },
-          {
-            label: 'Clicks',
-            data: clicks.length ? clicks : [0],
-            borderColor: '#22c55e',
-            backgroundColor: 'rgba(34,197,94,0.12)',
-            tension: 0.35,
-            fill: true,
-            pointRadius: 3,
-          }
+          { label: 'Opens', data: opens.length ? opens : [0], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.12)', tension: 0.35, fill: true, pointRadius: 3 },
+          { label: 'Clicks', data: clicks.length ? clicks : [0], borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.12)', tension: 0.35, fill: true, pointRadius: 3 }
         ]
       },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: '#8b93a5' } } },
+        plugins: { legend: { labels: { color: '#8b8d98' } } },
         scales: {
-          x: { ticks: { color: '#8b93a5' }, grid: { color: '#262b36' } },
-          y: { ticks: { color: '#8b93a5', precision: 0 }, grid: { color: '#262b36' }, beginAtZero: true }
+          x: { ticks: { color: '#8b8d98' }, grid: { color: '#eceef2' } },
+          y: { ticks: { color: '#8b8d98', precision: 0 }, grid: { color: '#eceef2' }, beginAtZero: true }
         }
       }
     });
