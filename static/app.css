@@ -288,34 +288,53 @@ button.btn-primary:hover { opacity: 0.88; }
    only the chrome that used to sit directly on the plain light shell
    (sidebar, topbar text, nav pills, greeting) needs a light-on-dark flip. ---- */
 body.dashboard-bg {
-  background: linear-gradient(180deg, rgba(6,8,14,0.80), rgba(6,8,14,0.92)),
+  background: linear-gradient(180deg, rgba(6,8,14,0.40), rgba(6,8,14,0.58)),
               url('images/profile-hero.jpg') center 15% / cover fixed no-repeat;
   min-height: 100vh;
 }
 body.dashboard-bg .shell {
-  background: rgba(21,22,30,0.74);
-  backdrop-filter: blur(18px);
+  background: rgba(18,19,26,0.32);
+  backdrop-filter: blur(6px);
   box-shadow: 0 30px 80px -20px rgba(0,0,0,0.65);
 }
 body.dashboard-bg .sidebar {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.04);
   border-right: 1px solid rgba(255,255,255,0.08);
 }
-body.dashboard-bg .sidebar a { color: rgba(255,255,255,0.55); }
+body.dashboard-bg .sidebar a { color: rgba(255,255,255,0.6); }
 body.dashboard-bg .sidebar a.active, body.dashboard-bg .sidebar a:hover {
-  background: rgba(255,138,61,0.22); color: var(--accent);
+  background: rgba(255,138,61,0.25); color: var(--accent);
 }
-body.dashboard-bg .topbar .brand-line { color: rgba(255,255,255,0.55); }
-body.dashboard-bg .topbar .brand-line b,
-body.dashboard-bg .topbar h1 { color: #fff; }
-body.dashboard-bg .topbar .sub { color: rgba(255,255,255,0.5); }
-body.dashboard-bg .profile-chip .who { color: #fff; }
-body.dashboard-bg .profile-chip .role { color: rgba(255,255,255,0.5); }
+/* Cards that used to be fully opaque are now glass too, so the photo
+   shows through everywhere, not just the gaps between them. */
+body.dashboard-bg .widget {
+  background: rgba(21,22,27,0.45);
+  backdrop-filter: blur(8px);
+  border-color: rgba(255,255,255,0.1);
+}
+body.dashboard-bg .panel {
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(10px);
+  border-color: rgba(255,255,255,0.3);
+}
+body.dashboard-bg .flash { background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); }
+body.dashboard-bg .journey-row { background: rgba(255,255,255,0.35); }
+body.dashboard-bg tr:hover td { background: rgba(255,255,255,0.25); }
+
+/* Text sitting directly on the photo (no card behind it) gets a shadow
+   instead of a solid backdrop, so it stays legible without hiding the image. */
+body.dashboard-bg .topbar .brand-line,
+body.dashboard-bg .topbar h1,
+body.dashboard-bg .topbar .sub,
+body.dashboard-bg .profile-chip .who,
+body.dashboard-bg .profile-chip .role,
+body.dashboard-bg .greeting-block .hi,
+body.dashboard-bg .greeting-block .ask,
+body.dashboard-bg .main > .hint {
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(0,0,0,0.75);
+}
+body.dashboard-bg .topbar .brand-line b { color: #fff; }
 body.dashboard-bg .nav-links a, body.dashboard-bg .nav-links button {
-  background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); color: #fff;
+  background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: #fff;
 }
-body.dashboard-bg .greeting-block .hi { color: #fff; }
-body.dashboard-bg .greeting-block .ask { color: rgba(255,255,255,0.65); }
-/* Only hints sitting directly on the dark shell (not the one inside the
-   light .panel further down, which needs its normal dark-on-light color). */
-body.dashboard-bg .main > .hint { color: rgba(255,255,255,0.45); }
