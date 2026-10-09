@@ -139,6 +139,7 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
         )
         _, token = db.create_recipient(
             campaign_id, email, kind="outreach", sheet_row=row, lead_domain=domain, lead_url=url,
+            sender_email=cfg.from_email,
         )
 
         pixel_url_template = open_pixel_url(base_url, "{{token}}")
@@ -206,6 +207,7 @@ def send_due_followups(base_url: str, cfg: MailerConfig, sender, hours: int = FO
         token = db.create_recipient(
             recipient["campaign_id"], email, kind="outreach",
             lead_domain=domain, lead_url=recipient.get("lead_url"),
+            sender_email=cfg.from_email,
         )[1]
 
         pixel_url_template = open_pixel_url(base_url, "{{token}}")

@@ -751,6 +751,16 @@ def index():
         to_send = sorted(valid_emails - suppressed)
         skipped_unsubscribed = sorted(valid_emails & suppressed)
 
+        # Resolved up front (not just inside the send try/except below) so
+        # create_recipient() can record WHICH mailbox each one is being sent
+        # from — reply_checker.py needs that to know where to look for a
+        # reply (see db.find_username_by_connected_email / db schema note).
+        try:
+            cfg, sender = sender_for_current_user()
+        except Exception as e:
+            flash(f"Could not resolve a sending identity: {e}")
+            return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status(), **_google_account_context())
+
         # --- create campaign + per-recipient tracking rows up front ---
         campaign_id = db.create_campaign(
             subject=form.subject.data,
@@ -760,7 +770,7 @@ def index():
         )
         tokens = {}
         for email in to_send:
-            _, token = db.create_recipient(campaign_id, email)
+            _, token = db.create_recipient(campaign_id, email, sender_email=cfg.from_email)
             tokens[email] = token
 
         base_url = get_public_base_url()
@@ -782,7 +792,6 @@ def index():
         )
 
         try:
-            cfg, sender = sender_for_current_user()
             results = send_batch(
                 cfg,
                 sender,

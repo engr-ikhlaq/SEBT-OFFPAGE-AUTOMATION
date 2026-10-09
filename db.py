@@ -139,6 +139,11 @@ _COLUMN_MIGRATIONS = (
     "ALTER TABLE recipients ADD COLUMN lead_url TEXT",
     "ALTER TABLE recipients ADD COLUMN followed_up_at TEXT",
     "ALTER TABLE recipients ADD COLUMN reply_seen_at TEXT",
+    # The FROM address this specific message was actually sent through -
+    # reply_checker.py needs this to know which mailbox a reply would land
+    # in, since that's whichever Gmail the sender had connected at the
+    # time, not necessarily the shared SMTP_* config (see check_for_replies).
+    "ALTER TABLE recipients ADD COLUMN sender_email TEXT",
 )
 
 
@@ -181,19 +186,24 @@ def create_campaign(subject, message, link_url, link_text) -> int:
 
 def create_recipient(campaign_id: int, email: str, kind: str = "campaign",
                       sheet_row: int = None, lead_domain: str = None,
-                      lead_url: str = None) -> tuple[int, str]:
+                      lead_url: str = None, sender_email: str = None) -> tuple[int, str]:
     """Creates a pending recipient row with a fresh tracking token. Returns (id, token).
 
     kind/sheet_row/lead_domain/lead_url are set for leads sourced from the
     connected sheet (see auto_outreach.py), so a follow-up or the dashboard
     can show which lead and which sheet row a recipient came from.
+
+    sender_email is the FROM address this message is being sent through
+    (cfg.from_email, from whichever sender_for_current_user() resolved at
+    send time) — see reply_checker.py, which uses it to find the right
+    mailbox to check for a reply.
     """
     token = uuid.uuid4().hex
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO recipients (campaign_id, email, token, status, kind, sheet_row, lead_domain, lead_url) "
-            "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
-            (campaign_id, email, token, kind, sheet_row, lead_domain, lead_url),
+            "INSERT INTO recipients (campaign_id, email, token, status, kind, sheet_row, lead_domain, lead_url, sender_email) "
+            "VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
+            (campaign_id, email, token, kind, sheet_row, lead_domain, lead_url, sender_email),
         )
         return cur.lastrowid, token
 
@@ -382,27 +392,20 @@ def get_recent_activity(limit: int = 25):
         return [dict(r) for r in rows]
 
 
-def get_all_recipients_for_reply_check(only_kind: str = None, exclude_kind: str = None):
-    """Recipients that were successfully sent to and don't have a reply logged yet.
-
-    only_kind/exclude_kind let a caller split this by 'kind' (e.g. checking
-    outreach leads against a different mailbox than everything else) —
-    see reply_checker.py.
+def get_all_recipients_for_reply_check():
+    """Recipients that were successfully sent to and don't have a reply
+    logged yet, with the FROM address each was actually sent through
+    (sender_email) — reply_checker.py groups these by that address to know
+    which mailbox to check each one against, since that's whichever Gmail
+    the sender had connected at send time, not necessarily one fixed inbox.
     """
     query = """
-        SELECT id, campaign_id, email, message_id, sent_at
+        SELECT id, campaign_id, email, message_id, sent_at, sender_email
         FROM recipients
         WHERE status='sent' AND message_id IS NOT NULL AND replied_at IS NULL
     """
-    params: list[str] = []
-    if only_kind:
-        query += " AND kind=?"
-        params.append(only_kind)
-    if exclude_kind:
-        query += " AND kind!=?"
-        params.append(exclude_kind)
     with get_conn() as conn:
-        rows = conn.execute(query, params).fetchall()
+        rows = conn.execute(query).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -622,11 +625,14 @@ def find_username_by_connected_email(email: str) -> str | None:
     manual), regardless of their own username — used by signup() so the
     same mailbox can't be claimed by a second app account (an older
     account's username isn't necessarily its email, e.g. one the owner
-    set up by hand before self-signup existed)."""
+    set up by hand before self-signup existed), and by reply_checker.py
+    to find whose App Password to check a mailbox with. Case-insensitive —
+    email casing isn't meaningful and callers won't always agree on it."""
+    email = email.strip().lower()
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT username FROM google_accounts WHERE google_email=? "
-            "UNION SELECT username FROM manual_email_accounts WHERE email=? LIMIT 1",
+            "SELECT username FROM google_accounts WHERE LOWER(google_email)=? "
+            "UNION SELECT username FROM manual_email_accounts WHERE LOWER(email)=? LIMIT 1",
             (email, email),
         ).fetchone()
         return row["username"] if row else None
