@@ -27,6 +27,8 @@ from pathlib import Path
 
 import requests
 
+import data_source
+import local_store
 from offpage.browser import BrowserSession, GoogleSearch, PageReader
 from offpage.config import Settings
 from offpage.crawler import SiteCrawler
@@ -116,9 +118,15 @@ def _start(keyword: str, reset_total: bool) -> bool:
 
 def _settings_for_keyword(keyword: str) -> Settings:
     """Config comes from this app's own .env (GOOGLE_*), not offpage's usual
-    SPREADSHEET_ID/CREDENTIALS_PATH vars - avoids two names for one value."""
+    SPREADSHEET_ID/CREDENTIALS_PATH vars - avoids two names for one value.
+
+    spreadsheet_id falls back to a placeholder when no Sheet is connected -
+    Settings requires a non-empty value, but it's never actually used in
+    that case: _run_batch builds a local_store.ExcelSink instead of a
+    SheetSink whenever data_source.is_sheet_connected() is False.
+    """
     return Settings(
-        spreadsheet_id=os.environ["GOOGLE_SHEET_ID"],
+        spreadsheet_id=os.environ.get("GOOGLE_SHEET_ID") or "local-store-not-a-real-sheet-id",
         credentials_path=Path(os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "sheet_credentials.json")),
         worksheet_name=os.environ.get("GOOGLE_WORKSHEET_NAME") or None,
         seen_db_path=Path(os.environ.get("SEEN_DB_PATH", "seen_domains.db")),
@@ -140,13 +148,7 @@ def _should_stop() -> bool:
 
 
 def _run_batch(keyword: str) -> None:
-    try:
-        settings = _settings_for_keyword(keyword)
-    except KeyError as exc:
-        with _lock:
-            _status.state = "error"
-            _status.error = f"{exc} is not set in .env"
-        return
+    settings = _settings_for_keyword(keyword)
 
     http = requests.Session()
     http.headers["User-Agent"] = USER_AGENT
@@ -156,9 +158,12 @@ def _run_batch(keyword: str) -> None:
 
     try:
         with SeenStore(settings.seen_db_path) as store, BrowserSession() as session:
-            sink = SheetSink(
-                open_worksheet(settings.credentials_path, settings.spreadsheet_id, settings.worksheet_name)
-            )
+            if data_source.is_sheet_connected():
+                sink = SheetSink(
+                    open_worksheet(settings.credentials_path, settings.spreadsheet_id, settings.worksheet_name)
+                )
+            else:
+                sink = local_store.ExcelSink()
             sink.ensure_headers()
             writer = LeadWriter(sink, store, settings.batch_size)
 

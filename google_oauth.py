@@ -50,7 +50,7 @@ SCOPES = (
     "https://www.googleapis.com/auth/drive.file",
 )
 
-SHEET_TITLE = "MailFlow Leads"
+SHEET_TITLE = "Guest Posting Automation - Leads"
 SHEET_HEADERS = ("Email", "Keyword", "Domain", "Status", "Sent Time", "Error")
 
 

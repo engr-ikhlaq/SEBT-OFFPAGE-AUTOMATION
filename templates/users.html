@@ -25,6 +25,7 @@
 {% endif %}
 {% endwith %}
 
+{% if is_owner %}
 <div class="form-card">
     <h2 style="margin-top:0;">Add someone</h2>
     <form method="POST">
@@ -65,6 +66,23 @@
         {% endfor %}
         </tbody>
     </table>
+</div>
+{% else %}
+<div class="hint" style="margin-bottom:18px;">Only the owner account can add or remove other people's access.</div>
+{% endif %}
+
+<div class="panel">
+    <h2>Your account</h2>
+    <p style="color:var(--muted); font-size:13px; margin:0 0 16px;">
+        Logged in as <strong>{{ session.username }}</strong>. Leaving removes your login entirely —
+        you'd need someone with access to add you back.
+    </p>
+    <form method="POST" action="{{ url_for('leave_access') }}" style="margin:0;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" onclick="return confirm('Leave this app? Your own access will be removed immediately.')">
+            Leave access
+        </button>
+    </form>
 </div>
 
 </body>

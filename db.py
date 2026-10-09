@@ -84,6 +84,19 @@ CREATE TABLE IF NOT EXISTS google_accounts (
     connected_at    TEXT NOT NULL
 );
 
+-- The no-OAuth-setup-needed alternative: a Gmail address + app password,
+-- typed directly into the app (see app.py's /connect/gmail-manual). Works
+-- immediately, with none of the admin-side Cloud Console setup OAuth
+-- needs. If a user has BOTH this and an OAuth connection, OAuth wins
+-- (sender_for_current_user() checks it first) - this is the fallback
+-- for whoever hasn't done, or doesn't want to do, OAuth.
+CREATE TABLE IF NOT EXISTS manual_email_accounts (
+    username        TEXT PRIMARY KEY,
+    email           TEXT NOT NULL,
+    app_password    TEXT NOT NULL,
+    connected_at    TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_recipients_campaign ON recipients(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_recipients_token ON recipients(token);
 CREATE INDEX IF NOT EXISTS idx_events_recipient ON events(recipient_id);
@@ -468,6 +481,7 @@ def delete_user(user_id: int) -> bool:
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
         if row:
             conn.execute("DELETE FROM google_accounts WHERE username=?", (row["username"],))
+            conn.execute("DELETE FROM manual_email_accounts WHERE username=?", (row["username"],))
         return True
 
 
@@ -505,3 +519,30 @@ def update_google_access_token(username: str, access_token: str) -> None:
 def delete_google_account(username: str) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM google_accounts WHERE username=?", (username,))
+
+
+# ---------------------------------------------------------------------------
+# Manually-connected Gmail (email + app password, no OAuth setup needed)
+# ---------------------------------------------------------------------------
+
+def save_manual_email_account(username: str, email: str, app_password: str) -> None:
+    """Upsert: connecting again just replaces the stored password."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO manual_email_accounts (username, email, app_password, connected_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(username) DO UPDATE SET "
+            "  email=excluded.email, app_password=excluded.app_password, connected_at=excluded.connected_at",
+            (username, email, app_password, now_iso()),
+        )
+
+
+def get_manual_email_account(username: str):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM manual_email_accounts WHERE username=?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_manual_email_account(username: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM manual_email_accounts WHERE username=?", (username,))

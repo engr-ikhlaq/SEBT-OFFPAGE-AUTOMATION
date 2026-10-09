@@ -49,6 +49,14 @@ class GoogleAccountsDbTests(unittest.TestCase):
         self.assertTrue(db.delete_user(user_id))
         self.assertIsNone(db.get_google_account("alice"))
 
+    def test_deleting_a_user_also_removes_their_manual_email_account(self):
+        user_id = db.create_user("alice", "hash", role="owner")
+        db.create_user("bob", "hash", role="member")
+        db.save_manual_email_account("alice", "alice@gmail.com", "app-pass")
+
+        self.assertTrue(db.delete_user(user_id))
+        self.assertIsNone(db.get_manual_email_account("alice"))
+
     def test_two_users_connect_independently(self):
         db.save_google_account("alice", "alice@gmail.com", "r1", "a1", "s1")
         db.save_google_account("bob", "bob@gmail.com", "r2", "a2", "s2")

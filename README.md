@@ -30,12 +30,30 @@ python app.py
 
 Visit `http://localhost:5000`, log in with `ADMIN_PASSWORD`, and fill out the form.
 
-## Connect Google Account (recommended over the app-password setup above)
+## Connecting Gmail: two ways, shown right after login
 
-Instead of generating a Gmail app password and pasting it into `.env`, any
-logged-in user can click **Connect Google Account** on the Compose page and
-sign in with their own Gmail through Google's own consent screen. No
-password ever passes through this app. They get:
+Every user is walked through connecting their own Gmail the first time they
+log in (`/onboarding`) — not forced, "Skip for now" is always there. Two
+options:
+
+- **Manual (always available, no admin setup)** — two text boxes: Gmail
+  address and an [App
+  Password](https://myaccount.google.com/apppasswords) (not the normal
+  Gmail password; needs 2-Step Verification on first). Works immediately,
+  for anyone, regardless of whether the one-click option below is set up.
+- **One-click Google sign-in (OAuth)** — see below. Nicer (no password
+  ever typed into this app, gets its own auto-created lead sheet) but
+  needs the one-time Cloud Console setup from whoever runs the app.
+
+If a user has both, the one-click connection is used. Either way, campaigns
+and outreach they send go out as them, not a shared identity — and anyone
+who hasn't connected either falls back to the shared `SMTP_*` config.
+
+### Connect Google Account (one-click, via OAuth)
+
+Any logged-in user can click **Connect Google Account** and sign in with
+their own Gmail through Google's own consent screen. No password ever
+passes through this app. They get:
 
 - **Sending as themselves** — through the Gmail API, not SMTP, so there's
   no app password to generate or protect.
@@ -82,6 +100,16 @@ or small-team tool like this one.
 The shared `SMTP_*` setup from the section above still works and is used
 as the fallback for anyone who hasn't connected their own account — nothing
 breaks if you skip this section entirely.
+
+## Where leads are stored: local file by default, a Sheet if you connect one
+
+Scraped leads and outreach status (`Status`/`Sent Time`/`Error`) live in a
+local `leads.xlsx` file by default — created automatically, no setup. Set
+`GOOGLE_SHEET_ID` + `GOOGLE_SERVICE_ACCOUNT_FILE` in `.env` and the app
+switches to that Sheet instead, for everyone, the next time it starts — the
+scraper, the dashboard's lead-count numbers, and outreach's "who's unsent"
+check all read from whichever one is active (`data_source.py` is the one
+place that decides). Switching back just means clearing those two env vars.
 
 ## Why this won't automatically land in spam (and what to still watch for)
 
@@ -155,12 +183,15 @@ domain before sending to anyone outside your own machine.
 - `db.py` — SQLite storage: campaigns/recipients/events, users, connected Google accounts, aggregate queries
 - `tracking.py` — open-pixel and click-redirect endpoints
 - `reply_checker.py` — optional IMAP-based reply detection (main mailbox and/or a connected outreach mailbox)
-- `sheets_source.py` — reads/writes the shared Keywords sheet (recipients for a campaign, lead counts for the dashboard)
-- `auto_outreach.py` — the automated guest-post pitch + 24h follow-up, sourced from the Keywords sheet
+- `sheets_source.py` — reads/writes a connected Google Sheet (recipients for a campaign; one of the two lead-data backends)
+- `local_store.py` — the other lead-data backend: a local `leads.xlsx` file, used automatically when no Sheet is connected
+- `data_source.py` — picks between the two above; everything else goes through this, not sheets_source/local_store directly
+- `auto_outreach.py` — the automated guest-post pitch + 24h follow-up, sourced from whichever backend is active
 - `scrape_job.py` — runs the lead scraper (`offpage/`) in a background thread, driven from the Compose page
 - `offpage/` — the Google-search lead finder (keyword → relevance-checked, email-verified leads)
-- `templates/` — login, compose (campaign + scraping + Google connect), dashboard, users, campaign detail, unsubscribe page
+- `templates/` — login, onboarding, compose (campaign + scraping + Gmail connect), dashboard, users, campaign detail, unsubscribe page
 - `static/app.css` — the one shared stylesheet every page uses
+- `leads.xlsx` — auto-created; the local lead-data backend (see data_source.py above)
 - `tracking.db` — auto-created SQLite file; all tracking/user/connected-account data
 - `seen_domains.db` — auto-created; scraper's dedup memory, so re-running a keyword doesn't repeat work
 - `suppression_list.json` — auto-created; permanent record of unsubscribes,

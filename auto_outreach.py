@@ -1,10 +1,16 @@
 """
 auto_outreach.py
-Turns confirmed leads from the connected Google Sheet into sent guest-post
-pitches, with no manual compose step.
+Turns confirmed leads — from whichever store is active, see data_source.py
+— into sent guest-post pitches, with no manual compose step.
+
+Sending identity: the caller provides it (cfg, sender) — normally
+app.sender_for_current_user(), so the pitch goes out as whoever is logged
+in and clicked "Send to new leads now": their connected Google account if
+they have one (Gmail API, no app password), otherwise the shared SMTP_*
+config in .env. This module has no fixed persona of its own.
 
 send_pending_leads():
-    - Reads rows from the sheet whose Status is still empty (sheets_source
+    - Reads rows with an empty Status from the active store (data_source
       already skips rows marked "sent").
     - Sends each one individually through mailer.send_batch (so it gets the
       same throttling, List-Unsubscribe header, and tracking as every other
@@ -28,20 +34,12 @@ from __future__ import annotations
 import logging
 
 import db
-import sheets_source
-from mailer import MailerConfig, SmtpSender, personalize, send_batch
+import data_source
+from mailer import MailerConfig, personalize, send_batch
 
 log = logging.getLogger("auto_outreach")
 
 FOLLOW_UP_AFTER_HOURS = 24
-
-
-def _outreach_mailer_config() -> MailerConfig:
-    """The guest-post pitch's own sending identity (e.g. mairablogwrites@gmail.com),
-    separate from whatever account sends everything else. Only the OUTREACH_*
-    values that actually differ need to be set — anything left unset falls
-    back to the main SMTP_*/FROM_* config (see MailerConfig.from_env)."""
-    return MailerConfig.from_env(prefix="OUTREACH_")
 
 OUTREACH_SUBJECT = "Content Contribution Idea - {{domain}}"
 
@@ -104,21 +102,20 @@ def _render_email_html(body_html: str, *, pixel_url_template: str, unsubscribe_u
     )
 
 
-def send_pending_leads(base_url: str, limit: int | None = None) -> dict:
-    """Sends the outreach email to every unsent, valid-email lead in the sheet.
+def send_pending_leads(base_url: str, cfg: MailerConfig, sender, limit: int | None = None) -> dict:
+    """Sends the outreach email to every unsent, valid-email lead in whichever
+    store is active (data_source.py: the connected Sheet, or the local Excel
+    file if none is connected — always available either way).
 
+    cfg/sender: the sending identity to use — see module docstring.
     Returns {"sent": [...], "failed": [...], "skipped": [...]}.
     """
-    if not sheets_source.is_configured():
-        raise RuntimeError("Google Sheet isn't configured — set GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEET_ID.")
-
     from link_paths import click_url, open_pixel_url, unsubscribe_url as build_unsub_url
 
-    leads = sheets_source.read_recipients(skip_already_sent=True)
+    leads = data_source.read_recipients(skip_already_sent=True)
     if limit is not None:
         leads = leads[:limit]
 
-    cfg = _outreach_mailer_config()
     summary = {"sent": [], "failed": [], "skipped": []}
 
     for lead in leads:
@@ -154,7 +151,7 @@ def send_pending_leads(base_url: str, limit: int | None = None) -> dict:
         try:
             result = send_batch(
                 cfg,
-                SmtpSender(cfg),
+                sender,
                 recipients=[email],
                 subject=OUTREACH_SUBJECT,
                 html_template=html_template,
@@ -166,31 +163,33 @@ def send_pending_leads(base_url: str, limit: int | None = None) -> dict:
         except Exception as exc:  # SMTP/connection failure for this one lead
             log.exception("Send failed for %s", email)
             db.mark_recipient_result(email, campaign_id, "failed", error=str(exc))
-            sheets_source.write_result(row, status="failed", error=str(exc))
+            data_source.write_result(row, status="failed", error=str(exc))
             summary["failed"].append((email, str(exc)))
             continue
 
         if result["sent"]:
             message_id = result["message_ids"][email]
             db.mark_recipient_result(email, campaign_id, "sent", message_id=message_id)
-            sheets_source.write_result(row, status="sent")
+            data_source.write_result(row, status="sent")
             summary["sent"].append(email)
             log.info("Outreach sent to %s (%s)", email, domain)
         else:
             _, err = result["failed"][0]
             db.mark_recipient_result(email, campaign_id, "failed", error=err)
-            sheets_source.write_result(row, status="failed", error=err)
+            data_source.write_result(row, status="failed", error=err)
             summary["failed"].append((email, err))
 
     return summary
 
 
-def send_due_followups(base_url: str, hours: int = FOLLOW_UP_AFTER_HOURS) -> dict:
-    """Sends one follow-up to each outreach lead that's gone unanswered for `hours`."""
+def send_due_followups(base_url: str, cfg: MailerConfig, sender, hours: int = FOLLOW_UP_AFTER_HOURS) -> dict:
+    """Sends one follow-up to each outreach lead that's gone unanswered for `hours`.
+
+    cfg/sender: the sending identity to use — see module docstring.
+    """
     from link_paths import open_pixel_url, unsubscribe_url as build_unsub_url
 
     due = db.get_recipients_due_for_followup(hours=hours)
-    cfg = _outreach_mailer_config()
     summary = {"sent": [], "failed": []}
 
     for recipient in due:
@@ -218,7 +217,7 @@ def send_due_followups(base_url: str, hours: int = FOLLOW_UP_AFTER_HOURS) -> dic
         try:
             result = send_batch(
                 cfg,
-                SmtpSender(cfg),
+                sender,
                 recipients=[email],
                 subject=FOLLOWUP_SUBJECT,
                 html_template=html_template,

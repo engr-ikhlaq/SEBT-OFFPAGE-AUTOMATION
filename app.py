@@ -48,6 +48,7 @@ import google_oauth
 import scrape_job
 from mailer import GmailApiSender, MailerConfig, SmtpSender, send_batch
 from tracking import tracking_bp
+import data_source
 import db
 import sheets_source
 
@@ -106,24 +107,50 @@ def get_mailer_config() -> MailerConfig:
     return MailerConfig.from_env()
 
 
+def _display_name_for(username: str) -> str:
+    """'ikhlaq-wahid' -> 'Ikhlaq Wahid' — used as the From name for a
+    connected account, so each user signs as themselves rather than a
+    shared static name."""
+    return username.replace("-", " ").replace("_", " ").title() or username
+
+
 def sender_for_current_user() -> tuple[MailerConfig, object]:
-    """(cfg, sender) for whoever is logged in: their connected Google
-    account (Gmail API, no app password) if they have one, otherwise the
-    shared SMTP_* config from .env — same as before OAuth existed."""
-    account = db.get_google_account(session.get("username", ""))
-    if account:
-        creds = google_oauth.credentials_from_row(account)
-        if creds.token != account["access_token"]:
-            db.update_google_access_token(session["username"], creds.token)
+    """(cfg, sender) for whoever is logged in, checked in this order:
+    1. Their connected Google account (OAuth, Gmail API, no app password).
+    2. Their manually-connected Gmail (email + app password typed directly
+       into the app — no admin OAuth setup needed, see /connect/gmail-manual).
+    3. The shared SMTP_* config from .env — same as before either existed.
+    Used for BOTH manual campaigns and outreach, so "the outreach identity"
+    is simply whoever clicked the button."""
+    username = session.get("username", "")
+
+    google_account = db.get_google_account(username)
+    if google_account:
+        creds = google_oauth.credentials_from_row(google_account)
+        if creds.token != google_account["access_token"]:
+            db.update_google_access_token(username, creds.token)
         cfg = MailerConfig(
-            host="", port=0, username=account["google_email"], password="",
-            from_name=os.environ.get("FROM_NAME", account["google_email"]),
-            from_email=account["google_email"],
-            reply_to=account["google_email"],
+            host="", port=0, username=google_account["google_email"], password="",
+            from_name=_display_name_for(username),
+            from_email=google_account["google_email"],
+            reply_to=google_account["google_email"],
             send_delay_seconds=os.environ.get("SEND_DELAY_SECONDS", 3),
             max_emails_per_run=os.environ.get("MAX_EMAILS_PER_RUN", 150),
         )
         return cfg, GmailApiSender(creds)
+
+    manual_account = db.get_manual_email_account(username)
+    if manual_account:
+        cfg = MailerConfig(
+            host="smtp.gmail.com", port=587,
+            username=manual_account["email"], password=manual_account["app_password"],
+            from_name=_display_name_for(username),
+            from_email=manual_account["email"], reply_to=manual_account["email"],
+            send_delay_seconds=os.environ.get("SEND_DELAY_SECONDS", 3),
+            max_emails_per_run=os.environ.get("MAX_EMAILS_PER_RUN", 150),
+        )
+        return cfg, SmtpSender(cfg)
+
     cfg = get_mailer_config()
     return cfg, SmtpSender(cfg)
 
@@ -131,9 +158,12 @@ def sender_for_current_user() -> tuple[MailerConfig, object]:
 def _google_account_context() -> dict:
     """Shared by every index.html render call, so the connect-status panel
     (and the fallback-to-SMTP note) always reflects the same lookup."""
+    username = session.get("username", "")
     return {
-        "google_account": db.get_google_account(session.get("username", "")),
+        "google_account": db.get_google_account(username),
+        "manual_account": db.get_manual_email_account(username),
         "google_oauth_configured": google_oauth.is_configured(),
+        "manual_gmail_form": ManualGmailForm(),
     }
 
 
@@ -194,6 +224,11 @@ class AddUserForm(FlaskForm):
     password = PasswordField("Password", validators=[DataRequired()])
 
 
+class ManualGmailForm(FlaskForm):
+    email = StringField("Gmail address", validators=[DataRequired()])
+    app_password = PasswordField("App Password", validators=[DataRequired()])
+
+
 class CampaignForm(FlaskForm):
     subject = StringField("Subject", validators=[DataRequired()])
     link_url = StringField("Link to include in the email", validators=[DataRequired()])
@@ -224,9 +259,36 @@ def login():
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["role"] = user["role"]
-            return redirect(url_for("index"))
+            # First login (or hasn't connected a Gmail account yet, by
+            # either method): walk them through it once, rather than
+            # leaving them to find it buried on the Compose page.
+            connected = db.get_google_account(user["username"]) or db.get_manual_email_account(user["username"])
+            return redirect(url_for("onboarding" if not connected else "index"))
         flash("Incorrect username or password.")
     return render_template("login.html", form=form)
+
+
+@app.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    """Shown right after login until the user connects Gmail (by either
+    method) or chooses to skip — not forced every time, just once."""
+    if not require_login():
+        return redirect(url_for("login"))
+    if db.get_google_account(session["username"]) or db.get_manual_email_account(session["username"]):
+        return redirect(url_for("index"))
+
+    form = ManualGmailForm()
+    if form.validate_on_submit():
+        db.save_manual_email_account(session["username"], form.email.data.strip(), form.app_password.data)
+        flash(f"Connected {form.email.data.strip()}.")
+        return redirect(url_for("index"))
+
+    return render_template(
+        "onboarding.html",
+        form=form,
+        google_oauth_configured=google_oauth.is_configured(),
+        is_owner=require_owner(),
+    )
 
 
 @app.route("/logout")
@@ -237,14 +299,13 @@ def logout():
 
 @app.route("/users", methods=["GET", "POST"])
 def users():
+    """Visible to everyone logged in (so anyone can find the 'Leave access'
+    option below) - but only the owner can add or remove *other* people."""
     if not require_login():
         return redirect(url_for("login"))
-    if not require_owner():
-        flash("Only the owner account can manage users.")
-        return redirect(url_for("dashboard"))
 
     form = AddUserForm()
-    if form.validate_on_submit():
+    if require_owner() and form.validate_on_submit():
         username = form.username.data.strip()
         if db.get_user_by_username(username):
             flash(f"'{username}' already has an account.")
@@ -256,11 +317,16 @@ def users():
             flash(f"Added '{username}'. Share their password with them directly, not over chat/email.")
         return redirect(url_for("users"))
 
-    return render_template("users.html", form=form, users=db.list_users(), current_user_id=session["user_id"])
+    return render_template(
+        "users.html", form=form,
+        users=db.list_users() if require_owner() else None,
+        current_user_id=session["user_id"], is_owner=require_owner(),
+    )
 
 
 @app.route("/users/<int:user_id>/delete", methods=["POST"])
 def delete_user(user_id):
+    """Owner removing someone ELSE's access. For your own, see /users/leave."""
     if not require_login():
         return redirect(url_for("login"))
     if not require_owner():
@@ -268,12 +334,28 @@ def delete_user(user_id):
         return redirect(url_for("dashboard"))
 
     if user_id == session["user_id"]:
-        flash("You can't remove your own access.")
+        flash("That's your own account — use 'Leave access' below instead.")
     elif not db.delete_user(user_id):
         flash("Can't remove the last remaining account.")
     else:
         flash("Access removed.")
     return redirect(url_for("users"))
+
+
+@app.route("/users/leave", methods=["POST"])
+def leave_access():
+    """Self-service removal: any user (owner included) can give up their own
+    access, without needing someone else to do it for them."""
+    if not require_login():
+        return redirect(url_for("login"))
+
+    if not db.delete_user(session["user_id"]):
+        flash("You're the only account — add someone else before leaving, or this app would lock everyone out.")
+        return redirect(url_for("users"))
+
+    session.clear()
+    flash("You've left this app. Your access has been removed.")
+    return redirect(url_for("login"))
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +419,29 @@ def connect_google_disconnect():
         return redirect(url_for("login"))
     db.delete_google_account(session["username"])
     flash("Disconnected your Google account. Sending falls back to the shared SMTP setup.")
+    return redirect(url_for("index"))
+
+
+@app.route("/connect/gmail-manual", methods=["POST"])
+def connect_gmail_manual():
+    """The no-OAuth-setup-needed alternative — see db.save_manual_email_account."""
+    if not require_login():
+        return redirect(url_for("login"))
+    form = ManualGmailForm()
+    if form.validate_on_submit():
+        db.save_manual_email_account(session["username"], form.email.data.strip(), form.app_password.data)
+        flash(f"Connected {form.email.data.strip()}.")
+    else:
+        flash("Enter both your Gmail address and an App Password.")
+    return redirect(url_for("index"))
+
+
+@app.route("/connect/gmail-manual/disconnect", methods=["POST"])
+def connect_gmail_manual_disconnect():
+    if not require_login():
+        return redirect(url_for("login"))
+    db.delete_manual_email_account(session["username"])
+    flash("Disconnected. Sending falls back to the shared SMTP setup.")
     return redirect(url_for("index"))
 
 
@@ -518,11 +623,11 @@ def dashboard():
     needle_x, needle_y = _gauge_needle(reply_rate / 100)
     opens_spark = _sparkline_points(opens_by_day)
 
-    sheet_configured = sheets_source.is_configured()
+    sheet_configured = data_source.is_sheet_connected()
     try:
-        lead_counts = sheets_source.get_lead_counts() if sheet_configured else None
+        lead_counts = data_source.get_lead_counts()
     except Exception:
-        log.exception("Could not read lead counts from the sheet")
+        log.exception("Could not read lead counts from %s", data_source.backend_name())
         lead_counts = None
 
     return render_template(
@@ -542,6 +647,7 @@ def dashboard():
         unseen_replies=db.get_unseen_reply_count(),
         sheet_configured=sheet_configured,
         lead_counts=lead_counts,
+        data_backend_name=data_source.backend_name(),
         is_owner=require_owner(),
     )
 
@@ -559,12 +665,9 @@ def run_outreach():
     if not require_login():
         return redirect(url_for("login"))
 
-    if not sheets_source.is_configured():
-        flash("Google Sheet isn't configured — set GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEET_ID in .env.")
-        return redirect(url_for("dashboard"))
-
     try:
-        result = auto_outreach.send_pending_leads(get_public_base_url())
+        cfg, sender = sender_for_current_user()
+        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender)
         flash(
             f"Outreach run complete — sent {len(result['sent'])}, "
             f"failed {len(result['failed'])}, skipped {len(result['skipped'])}."
@@ -581,7 +684,8 @@ def run_followups():
         return redirect(url_for("login"))
 
     try:
-        result = auto_outreach.send_due_followups(get_public_base_url())
+        cfg, sender = sender_for_current_user()
+        result = auto_outreach.send_due_followups(get_public_base_url(), cfg, sender)
         flash(f"Follow-ups complete — sent {len(result['sent'])}, failed {len(result['failed'])}.")
     except Exception as e:
         flash(f"Follow-up run failed: {e}")
@@ -615,8 +719,6 @@ def scrape_start():
     keyword = (request.get_json(silent=True) or {}).get("keyword", "").strip()
     if not keyword:
         return {"error": "Enter a target keyword first."}, 400
-    if not sheets_source.is_configured():
-        return {"error": "Google Sheet isn't configured — set GOOGLE_SHEET_ID in .env."}, 400
     if not scrape_job.start(keyword):
         return {"error": "A scrape is already running."}, 409
     return scrape_job.get_status()
@@ -645,7 +747,8 @@ def scrape_send_now():
     if (refusal := _require_login_json()) is not None:
         return refusal
     try:
-        result = auto_outreach.send_pending_leads(get_public_base_url())
+        cfg, sender = sender_for_current_user()
+        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender)
     except Exception as exc:
         return {"error": str(exc)}, 500
     scrape_job.stop()  # don't let a later "continue" click resume after this

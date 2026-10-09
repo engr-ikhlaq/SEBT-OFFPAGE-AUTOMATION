@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Compose</title>
+<title>Compose — Guest Posting Automation</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
@@ -20,7 +20,7 @@
     <div class="main">
         <div class="topbar">
             <div>
-                <div class="brand-line"><b>MailFlow</b> &middot; Compose</div>
+                <div class="brand-line"><b>Guest Posting Automation</b> &middot; Compose</div>
                 <h1>Find leads &amp; send campaigns</h1>
             </div>
         </div>
@@ -44,15 +44,15 @@
         </div>
         {% endif %}
 
-        <!-- =============== Connect Google Account =============== -->
+        <!-- =============== Your Gmail connection =============== -->
         <div class="panel">
-            <h2>Your Google account</h2>
+            <h2>Your Gmail connection</h2>
             {% if google_account %}
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
                 <div style="display:flex; align-items:center; gap:12px;">
                     <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#6366f1,var(--accent)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; flex-shrink:0;">&#10003;</div>
                     <div>
-                        <div style="font-weight:700;">Connected: {{ google_account.google_email }}</div>
+                        <div style="font-weight:700;">Connected (Google sign-in): {{ google_account.google_email }}</div>
                         <div class="hint" style="margin:2px 0 0;">Sends go from this Gmail — no app password needed. It has its own lead sheet, created automatically.</div>
                     </div>
                 </div>
@@ -61,15 +61,44 @@
                     <button type="submit">Disconnect</button>
                 </form>
             </div>
-            {% elif google_oauth_configured %}
+            {% elif manual_account %}
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-                <div class="hint" style="margin:0;">Not connected — campaigns you send use the shared SMTP account instead.</div>
-                <a href="{{ url_for('connect_google') }}" class="btn-primary" style="width:auto; padding:11px 22px; text-decoration:none; display:inline-block;">&#128279; Connect Google Account</a>
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#6366f1,var(--accent)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; flex-shrink:0;">&#10003;</div>
+                    <div>
+                        <div style="font-weight:700;">Connected (App Password): {{ manual_account.email }}</div>
+                        <div class="hint" style="margin:2px 0 0;">Sends go through this Gmail's SMTP using the App Password you provided.</div>
+                    </div>
+                </div>
+                <form method="POST" action="{{ url_for('connect_gmail_manual_disconnect') }}" onsubmit="return confirm('Disconnect {{ manual_account.email }}? Sending will fall back to the shared setup.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit">Disconnect</button>
+                </form>
             </div>
             {% else %}
-            <div class="hint" style="margin:0;">
-                Google sign-in isn't set up for this app yet — it needs a one-time OAuth Client ID from Google Cloud
-                Console (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET in .env). Ask whoever runs this app.
+            <div class="hint" style="margin:0 0 16px;">Not connected — campaigns and outreach you send use the shared account instead.</div>
+
+            <div style="display:grid; grid-template-columns: {{ '1fr 1fr' if google_oauth_configured else '1fr' }}; gap:18px;">
+                {% if google_oauth_configured %}
+                <div>
+                    <div style="font-weight:700; font-size:13px; margin-bottom:8px;">One click</div>
+                    <a href="{{ url_for('connect_google') }}" class="btn-primary" style="width:auto; padding:11px 22px; text-decoration:none; display:inline-block;">&#128279; Connect Google Account</a>
+                </div>
+                {% endif %}
+                <div>
+                    <div style="font-weight:700; font-size:13px; margin-bottom:8px;">Or connect manually</div>
+                    <form method="POST" action="{{ url_for('connect_gmail_manual') }}">
+                        {{ manual_gmail_form.csrf_token }}
+                        <input type="text" name="email" placeholder="you@gmail.com" style="margin-bottom:8px;">
+                        <input type="password" name="app_password" placeholder="App Password" style="margin-bottom:8px;">
+                        <button type="submit" class="btn-primary" style="width:auto; padding:9px 18px;">Connect</button>
+                        <div class="hint" style="margin-top:8px;">
+                            Not your normal password — generate one at
+                            <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>
+                            (needs 2-Step Verification turned on first).
+                        </div>
+                    </form>
+                </div>
             </div>
             {% endif %}
         </div>
@@ -79,19 +108,17 @@
             <h2>Find guest-post leads</h2>
             <div class="hint" style="margin-top:-8px; margin-bottom:16px;">
                 Searches Google for guest-post opportunities matching your keyword, checks each site for
-                relevance and a verified email, and writes confirmed leads straight to the Keywords sheet —
+                relevance and a verified email, and writes confirmed leads straight to
+                {{ 'the connected Google Sheet' if sheet_configured else 'a local leads.xlsx file (no Sheet connected)' }} —
                 visible on the dashboard as soon as each one is found.
             </div>
 
             <div id="scrape-idle-form">
                 <label class="field-label" for="scrape-keyword">Target keyword</label>
-                <input type="text" id="scrape-keyword" placeholder="e.g. peptides, weight loss, SaaS analytics" {{ 'disabled' if not sheet_configured }}>
-                <button type="button" class="btn-primary" id="scrape-start-btn" style="width:auto; padding:12px 24px;" {{ 'disabled' if not sheet_configured }}>
+                <input type="text" id="scrape-keyword" placeholder="e.g. peptides, weight loss, SaaS analytics">
+                <button type="button" class="btn-primary" id="scrape-start-btn" style="width:auto; padding:12px 24px;">
                     &#128269; Start scraping
                 </button>
-                {% if not sheet_configured %}
-                <div class="hint">Google Sheet isn't connected — set GOOGLE_SHEET_ID in .env to enable scraping.</div>
-                {% endif %}
             </div>
 
             <div id="scrape-running" style="display:none;">
@@ -169,7 +196,6 @@
 <script>
 (function () {
   const csrfToken = {{ csrf_token() | tojson }};
-  const sheetConfigured = {{ 'true' if sheet_configured else 'false' }};
 
   const idleForm = document.getElementById('scrape-idle-form');
   const runningBox = document.getElementById('scrape-running');
@@ -282,9 +308,7 @@
 
   modalDismissBtn.addEventListener('click', () => { modal.style.display = 'none'; });
 
-  if (sheetConfigured) {
-    poll();  // pick up a scrape already running from a previous page load
-  }
+  poll();  // pick up a scrape already running from a previous page load
 })();
 </script>
 

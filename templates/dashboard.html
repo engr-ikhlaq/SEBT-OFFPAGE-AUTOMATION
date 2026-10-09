@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Outreach Dashboard</title>
+    <title>Dashboard — Guest Posting Automation</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
@@ -21,7 +21,7 @@
     <div class="main">
         <div class="topbar">
             <div>
-                <div class="brand-line"><b>MailFlow</b> &middot; Outreach</div>
+                <div class="brand-line"><b>Guest Posting Automation</b> &middot; Outreach</div>
                 <h1>Dashboard</h1>
                 <div class="sub">Live send, open, click &amp; reply tracking</div>
             </div>
@@ -73,7 +73,7 @@
                 </form>
                 <form method="POST" action="{{ url_for('run_outreach') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;" {{ 'disabled' if not sheet_configured }}>&#9993; Send to new leads</button>
+                    <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;">&#9993; Send to new leads</button>
                 </form>
             </div>
         </div>
@@ -149,12 +149,12 @@
             </div>
         </div>
 
-        <!-- scraped-lead numbers, from the Keywords sheet -->
+        <!-- scraped-lead numbers, from whichever store is active -->
         <div class="widget-section" style="grid-template-columns: repeat(4, 1fr); grid-template-rows: auto;">
             <div class="widget">
                 <div class="w-head"><div class="w-title"><span class="w-icon">&#128269;</span> Leads scraped</div></div>
                 <div class="w-value">{{ lead_counts.total if lead_counts is not none else '—' }}</div>
-                <div class="w-sub">in the Keywords sheet</div>
+                <div class="w-sub">in {{ data_backend_name }}</div>
             </div>
             <div class="widget">
                 <div class="w-head"><div class="w-title"><span class="w-icon">&#9203;</span> Awaiting outreach</div></div>
@@ -173,16 +173,14 @@
             </div>
         </div>
         {% if lead_counts is none %}
-        <div class="hint" style="margin-top:-10px; margin-bottom:18px;">Google Sheet isn't connected — set GOOGLE_SHEET_ID in .env to see scraped-lead numbers.</div>
+        <div class="hint" style="margin-top:-10px; margin-bottom:18px;">Could not read lead counts from {{ data_backend_name }} — check the logs.</div>
         {% endif %}
 
         <!-- lead journeys + recent activity -->
         <div class="two-col">
             <div class="panel">
                 <h2>Guest-post outreach</h2>
-                {% if not sheet_configured %}
-                <div class="hint">Google Sheet isn't connected — set GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEET_ID in .env.</div>
-                {% endif %}
+                <div class="hint">Reading from {{ data_backend_name }}{{ '' if sheet_configured else ' — connect a Google Sheet in .env to use that instead' }}.</div>
                 <div class="journey-list">
                     {% for lead in lead_journeys %}
                     <div class="journey-row">
