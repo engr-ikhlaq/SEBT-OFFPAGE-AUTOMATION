@@ -42,6 +42,8 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
+import local_store
+
 SCOPES = (
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -51,7 +53,12 @@ SCOPES = (
 )
 
 SHEET_TITLE = "Guest Posting Automation - Leads"
-SHEET_HEADERS = ("Email", "Keyword", "Domain", "Status", "Sent Time", "Error")
+# Same full column set as local_store.py (not just Email/Keyword/Domain/
+# Status/Sent Time/Error) - the scraper writes Date/Query/URL/Contact
+# Page/Snippet/Score too, and this sheet needs to accept that from the
+# moment it's created, or the first scrape into it would fail the header
+# check in sheet_store.SheetStore.ensure_headers().
+SHEET_HEADERS = local_store.HEADERS
 
 
 class NotConfigured(RuntimeError):
@@ -136,12 +143,20 @@ def get_connected_email(credentials: Credentials, http_session=None) -> str:
 
 
 def get_or_create_sheet(credentials: Credentials, client: gspread.Client | None = None) -> str:
-    """Returns the spreadsheet id of this account's MailFlow sheet, creating
+    """Returns the spreadsheet id of this account's own lead sheet, creating
     it (with the right headers) the first time."""
     gc = client or gspread.Client(auth=credentials)
     try:
         sh = gc.open(SHEET_TITLE)
     except gspread.SpreadsheetNotFound:
         sh = gc.create(SHEET_TITLE)
-        sh.sheet1.update(range_name="A1:F1", values=[list(SHEET_HEADERS)])
+        last_cell = gspread.utils.rowcol_to_a1(1, len(SHEET_HEADERS))
+        sh.sheet1.update(range_name=f"A1:{last_cell}", values=[list(SHEET_HEADERS)])
     return sh.id
+
+
+def open_user_worksheet(credentials: Credentials, sheet_id: str, client: gspread.Client | None = None):
+    """Opens a user's own connected sheet by id, using THEIR credentials —
+    not the admin's service account. Used by data_source.for_user()."""
+    gc = client or gspread.Client(auth=credentials)
+    return gc.open_by_key(sheet_id).sheet1

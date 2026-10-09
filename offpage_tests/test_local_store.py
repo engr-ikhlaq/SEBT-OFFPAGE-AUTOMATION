@@ -97,20 +97,52 @@ class ExcelSinkTests(unittest.TestCase):
         self.assertEqual(len(local_store.read_recipients(skip_already_sent=False)), 2)
 
 
-class DataSourceTests(unittest.TestCase):
-    def test_falls_back_to_local_store_when_sheet_not_configured(self):
-        import data_source
-        with mock.patch.object(data_source.sheets_source, "is_configured", return_value=False):
-            self.assertFalse(data_source.is_sheet_connected())
-            self.assertEqual(data_source.backend_name(), "local Excel file")
-            self.assertIs(data_source._backend(), data_source.local_store)
+class UserPathTests(unittest.TestCase):
+    def test_different_users_get_different_paths(self):
+        self.assertNotEqual(local_store.user_leads_path("alice"), local_store.user_leads_path("bob"))
 
-    def test_uses_sheet_when_configured(self):
-        import data_source
-        with mock.patch.object(data_source.sheets_source, "is_configured", return_value=True):
-            self.assertTrue(data_source.is_sheet_connected())
-            self.assertEqual(data_source.backend_name(), "Google Sheet")
-            self.assertIs(data_source._backend(), data_source.sheets_source)
+    def test_path_is_stable_for_the_same_user(self):
+        self.assertEqual(local_store.user_leads_path("alice"), local_store.user_leads_path("alice"))
+
+    def test_unsafe_characters_in_username_are_sanitized(self):
+        path = local_store.user_leads_path("alice@example.com")
+        self.assertNotIn("@", str(path))
+        self.assertTrue(str(path).startswith("leads_alice"))
+
+
+class PerUserFileIsolationTests(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = pathlib.Path(tempfile.mkdtemp())
+        self._alice = self._tmpdir / "alice.xlsx"
+        self._bob = self._tmpdir / "bob.xlsx"
+
+    def test_two_users_files_never_mix(self):
+        local_store.ExcelSink(path=self._alice).append_rows([
+            ["d", "k", "q", "a.test", "https://a.test", "alice-lead@a.test", "", "", 0, "", "", ""],
+        ])
+        local_store.ExcelSink(path=self._bob).append_rows([
+            ["d", "k", "q", "b.test", "https://b.test", "bob-lead@b.test", "", "", 0, "", "", ""],
+        ])
+
+        alice_leads = local_store.read_recipients(skip_already_sent=False, path=self._alice)
+        bob_leads = local_store.read_recipients(skip_already_sent=False, path=self._bob)
+        self.assertEqual([r["Email"] for r in alice_leads], ["alice-lead@a.test"])
+        self.assertEqual([r["Email"] for r in bob_leads], ["bob-lead@b.test"])
+
+    def test_read_all_rows_returns_plain_lists_for_migration(self):
+        local_store.ExcelSink(path=self._alice).append_rows([
+            ["01-Jan-2026", "widgets", "q", "a.test", "https://a.test", "lead@a.test", "", "snippet", 50, "", "", ""],
+        ])
+        rows = local_store.read_all_rows(self._alice)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][5], "lead@a.test")  # Email column
+        self.assertIsInstance(rows[0], list)
+
+    def test_clear_removes_the_file(self):
+        local_store.ExcelSink(path=self._alice).ensure_headers()
+        self.assertTrue(self._alice.exists())
+        local_store.clear(self._alice)
+        self.assertFalse(self._alice.exists())
 
 
 if __name__ == "__main__":

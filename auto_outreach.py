@@ -1,7 +1,8 @@
 """
 auto_outreach.py
-Turns confirmed leads — from whichever store is active, see data_source.py
-— into sent guest-post pitches, with no manual compose step.
+Turns confirmed leads — from whichever store belongs to whoever clicked
+the button, see data_source.for_user() — into sent guest-post pitches,
+with no manual compose step.
 
 Sending identity: the caller provides it (cfg, sender) — normally
 app.sender_for_current_user(), so the pitch goes out as whoever is logged
@@ -9,9 +10,13 @@ in and clicked "Send to new leads now": their connected Google account if
 they have one (Gmail API, no app password), otherwise the shared SMTP_*
 config in .env. This module has no fixed persona of its own.
 
+Lead data: the caller also provides `backend` (data_source.for_user()'s
+result) — the SAME person's own leads, not a shared pool. Two different
+users calling send_pending_leads() never touch each other's data.
+
 send_pending_leads():
-    - Reads rows with an empty Status from the active store (data_source
-      already skips rows marked "sent").
+    - Reads rows with an empty Status from `backend` (already skips rows
+      marked "sent").
     - Sends each one individually through mailer.send_batch (so it gets the
       same throttling, List-Unsubscribe header, and tracking as every other
       email this app sends).
@@ -34,7 +39,6 @@ from __future__ import annotations
 import logging
 
 import db
-import data_source
 from mailer import MailerConfig, personalize, send_batch
 
 log = logging.getLogger("auto_outreach")
@@ -102,17 +106,17 @@ def _render_email_html(body_html: str, *, pixel_url_template: str, unsubscribe_u
     )
 
 
-def send_pending_leads(base_url: str, cfg: MailerConfig, sender, limit: int | None = None) -> dict:
-    """Sends the outreach email to every unsent, valid-email lead in whichever
-    store is active (data_source.py: the connected Sheet, or the local Excel
-    file if none is connected — always available either way).
+def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit: int | None = None) -> dict:
+    """Sends the outreach email to every unsent, valid-email lead in
+    `backend` — the caller's own data_source.for_user() result, so this
+    only ever touches their own leads.
 
     cfg/sender: the sending identity to use — see module docstring.
     Returns {"sent": [...], "failed": [...], "skipped": [...]}.
     """
     from link_paths import click_url, open_pixel_url, unsubscribe_url as build_unsub_url
 
-    leads = data_source.read_recipients(skip_already_sent=True)
+    leads = backend.read_recipients(skip_already_sent=True)
     if limit is not None:
         leads = leads[:limit]
 
@@ -163,20 +167,20 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, limit: int | No
         except Exception as exc:  # SMTP/connection failure for this one lead
             log.exception("Send failed for %s", email)
             db.mark_recipient_result(email, campaign_id, "failed", error=str(exc))
-            data_source.write_result(row, status="failed", error=str(exc))
+            backend.write_result(row, status="failed", error=str(exc))
             summary["failed"].append((email, str(exc)))
             continue
 
         if result["sent"]:
             message_id = result["message_ids"][email]
             db.mark_recipient_result(email, campaign_id, "sent", message_id=message_id)
-            data_source.write_result(row, status="sent")
+            backend.write_result(row, status="sent")
             summary["sent"].append(email)
             log.info("Outreach sent to %s (%s)", email, domain)
         else:
             _, err = result["failed"][0]
             db.mark_recipient_result(email, campaign_id, "failed", error=err)
-            data_source.write_result(row, status="failed", error=err)
+            backend.write_result(row, status="failed", error=err)
             summary["failed"].append((email, err))
 
     return summary

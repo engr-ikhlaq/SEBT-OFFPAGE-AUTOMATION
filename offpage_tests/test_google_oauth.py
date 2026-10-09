@@ -77,9 +77,10 @@ class GetOrCreateSheetTests(unittest.TestCase):
         sheet_id = google_oauth.get_or_create_sheet(credentials=None, client=client)
         self.assertEqual(sheet_id, "sheet-id-1")
         self.assertEqual(client.create_calls, 1)
+        last_cell = gspread.utils.rowcol_to_a1(1, len(google_oauth.SHEET_HEADERS))
         header_call = client._by_title[google_oauth.SHEET_TITLE].sheet1.update
         header_call.assert_called_once_with(
-            range_name="A1:F1", values=[list(google_oauth.SHEET_HEADERS)]
+            range_name=f"A1:{last_cell}", values=[list(google_oauth.SHEET_HEADERS)]
         )
 
     def test_reuses_the_existing_sheet_on_a_second_call(self):
@@ -88,6 +89,24 @@ class GetOrCreateSheetTests(unittest.TestCase):
         second = google_oauth.get_or_create_sheet(credentials=None, client=client)
         self.assertEqual(first, second)
         self.assertEqual(client.create_calls, 1)  # not created twice
+
+
+class OpenUserWorksheetTests(unittest.TestCase):
+    def test_opens_by_id_using_the_given_client_and_returns_sheet1(self):
+        class FakeSpreadsheet2:
+            sheet1 = mock.Mock(name="sheet1")
+
+        class FakeClient2:
+            def __init__(self):
+                self.opened_with = None
+            def open_by_key(self, sheet_id):
+                self.opened_with = sheet_id
+                return FakeSpreadsheet2()
+
+        client = FakeClient2()
+        ws = google_oauth.open_user_worksheet(credentials=None, sheet_id="user-sheet-42", client=client)
+        self.assertEqual(client.opened_with, "user-sheet-42")
+        self.assertIs(ws, FakeSpreadsheet2.sheet1)
 
 
 if __name__ == "__main__":

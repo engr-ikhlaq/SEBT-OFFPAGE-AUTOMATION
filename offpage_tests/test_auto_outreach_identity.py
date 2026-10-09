@@ -79,48 +79,49 @@ def _cfg(name: str) -> MailerConfig:
 
 class OutreachUsesInjectedIdentityTests(unittest.TestCase):
     def setUp(self):
-        self._real_sheets = auto_outreach.data_source
         self._real_db = auto_outreach.db
         self._real_render = auto_outreach._render_email_html
         auto_outreach._render_email_html = lambda body_html, **kw: f"<html>{body_html}</html>"
 
     def tearDown(self):
-        auto_outreach.data_source = self._real_sheets
         auto_outreach.db = self._real_db
         auto_outreach._render_email_html = self._real_render
 
     def test_send_pending_leads_sends_as_the_passed_in_identity(self):
-        fake_sheets = FakeSheetsSource([
+        backend = FakeSheetsSource([
             {"Email": "lead@site.test", "Domain": "site.test", "URL": "https://site.test/page",
              "Keyword": "widgets", "row": 2},
         ])
-        auto_outreach.data_source = fake_sheets
         auto_outreach.db = FakeDb()
 
         cfg = _cfg("alice")
         sender = RecordingSender()
-        result = auto_outreach.send_pending_leads("https://app.test", cfg, sender)
+        result = auto_outreach.send_pending_leads("https://app.test", cfg, sender, backend)
 
         self.assertEqual(result["sent"], ["lead@site.test"])
         self.assertEqual(sender.enter_count, 1)
         self.assertIn("alice", sender.sent_as[0])  # From header carries the identity we passed in
-        self.assertEqual(fake_sheets.written, [(2, "sent", None)])
+        self.assertEqual(backend.written, [(2, "sent", None)])
 
-    def test_a_different_caller_gets_a_different_identity_with_no_shared_state(self):
+    def test_a_different_caller_gets_a_different_identity_and_backend_with_no_shared_state(self):
         leads = [{"Email": "lead@site.test", "Domain": "site.test", "URL": "https://site.test",
                   "Keyword": "widgets", "row": 2}]
-        auto_outreach.data_source = FakeSheetsSource(leads)
         auto_outreach.db = FakeDb()
+        backend_a = FakeSheetsSource(leads)
         sender_a = RecordingSender()
-        auto_outreach.send_pending_leads("https://app.test", _cfg("alice"), sender_a)
+        auto_outreach.send_pending_leads("https://app.test", _cfg("alice"), sender_a, backend_a)
 
-        auto_outreach.data_source = FakeSheetsSource(leads)
         auto_outreach.db = FakeDb()
+        backend_b = FakeSheetsSource(leads)
         sender_b = RecordingSender()
-        auto_outreach.send_pending_leads("https://app.test", _cfg("bob"), sender_b)
+        auto_outreach.send_pending_leads("https://app.test", _cfg("bob"), sender_b, backend_b)
 
         self.assertIn("alice", sender_a.sent_as[0])
         self.assertIn("bob", sender_b.sent_as[0])
+        # Each call only ever wrote to its OWN backend - the point of the
+        # whole per-user change: Alice's run never touches Bob's data.
+        self.assertEqual(backend_a.written, [(2, "sent", None)])
+        self.assertEqual(backend_b.written, [(2, "sent", None)])
 
     def test_send_due_followups_also_uses_the_passed_in_identity(self):
         auto_outreach.db = FakeDb()

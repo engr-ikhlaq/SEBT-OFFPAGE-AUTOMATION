@@ -15,6 +15,15 @@ switch to emailing what's been found. continue_scraping() starts the next
 batch for the same keyword - already-seen domains are skipped automatically
 (offpage.storage.SeenStore), so it picks up where the batch before left off
 rather than repeating it.
+
+Where results get written: start() takes who's scraping (username,
+is_owner) and resolves their backend via data_source.for_user() - their
+own connected Sheet, the admin's shared Sheet (owner only), or their own
+local file. Two different users running a scrape never write to the same
+place unless they've both connected the same Sheet on purpose. The
+seen-domains dedup database stays shared across everyone, though - that's
+just "don't re-check a site we already looked at," independent of whose
+lead data it ends up in.
 """
 
 from __future__ import annotations
@@ -28,7 +37,6 @@ from pathlib import Path
 import requests
 
 import data_source
-import local_store
 from offpage.browser import BrowserSession, GoogleSearch, PageReader
 from offpage.config import Settings
 from offpage.crawler import SiteCrawler
@@ -37,7 +45,6 @@ from offpage.parsing import PageParser
 from offpage.pipeline import LeadPipeline
 from offpage.relevance import RelevanceGate
 from offpage.scoring import Scorer
-from offpage.sheets import SheetSink, open_worksheet
 from offpage.storage import SeenStore
 from offpage.validation import EmailValidator
 from offpage.writer import LeadWriter
@@ -56,10 +63,12 @@ class ScrapeStatus:
     # idle | running | awaiting_decision | finished | stopped | error
     state: str = "idle"
     keyword: str = ""
+    username: str = ""
     queued_this_batch: int = 0
     queued_total: int = 0
     last_domain: str = ""
     error: str = ""
+    backend_name: str = ""
 
 
 _lock = threading.Lock()
@@ -78,17 +87,19 @@ def is_busy() -> bool:
         return _status.state == "running"
 
 
-def start(keyword: str) -> bool:
-    """Starts a fresh scrape for `keyword`. False if one is already busy."""
-    return _start(keyword, reset_total=True)
+def start(keyword: str, username: str, is_owner: bool) -> bool:
+    """Starts a fresh scrape for `keyword`, writing to the backend
+    data_source.for_user(username, is_owner) resolves. False if one is
+    already busy (one scrape, one Chrome window, at a time)."""
+    return _start(keyword, username, is_owner, reset_total=True)
 
 
 def continue_scraping() -> bool:
-    """Starts another batch for the keyword a prior batch was awaiting a decision on."""
+    """Starts another batch for the keyword/user a prior batch was awaiting a decision on."""
     with _lock:
-        keyword = _status.keyword
+        keyword, username = _status.keyword, _status.username
         ready = _status.state == "awaiting_decision" and bool(keyword)
-    return _start(keyword, reset_total=False) if ready else False
+    return _start(keyword, username, _last_is_owner, reset_total=False) if ready else False
 
 
 def stop() -> None:
@@ -98,20 +109,25 @@ def stop() -> None:
         _stop_requested = True
 
 
-def _start(keyword: str, reset_total: bool) -> bool:
-    global _thread, _stop_requested
+_last_is_owner = False  # remembered so continue_scraping() can re-resolve the same user's backend
+
+
+def _start(keyword: str, username: str, is_owner: bool, reset_total: bool) -> bool:
+    global _thread, _stop_requested, _last_is_owner
     with _lock:
         if _status.state == "running":
             return False
         _stop_requested = False
+        _last_is_owner = is_owner
         _status.state = "running"
         _status.keyword = keyword
+        _status.username = username
         _status.queued_this_batch = 0
         if reset_total:
             _status.queued_total = 0
         _status.last_domain = ""
         _status.error = ""
-    _thread = threading.Thread(target=_run_batch, args=(keyword,), daemon=True)
+    _thread = threading.Thread(target=_run_batch, args=(keyword, username, is_owner), daemon=True)
     _thread.start()
     return True
 
@@ -120,15 +136,13 @@ def _settings_for_keyword(keyword: str) -> Settings:
     """Config comes from this app's own .env (GOOGLE_*), not offpage's usual
     SPREADSHEET_ID/CREDENTIALS_PATH vars - avoids two names for one value.
 
-    spreadsheet_id falls back to a placeholder when no Sheet is connected -
-    Settings requires a non-empty value, but it's never actually used in
-    that case: _run_batch builds a local_store.ExcelSink instead of a
-    SheetSink whenever data_source.is_sheet_connected() is False.
+    spreadsheet_id is a placeholder here and never actually used - offpage's
+    Settings requires a non-empty value, but which sink the pipeline writes
+    to comes from data_source.for_user(), not from this Settings object
+    (see _run_batch).
     """
     return Settings(
-        spreadsheet_id=os.environ.get("GOOGLE_SHEET_ID") or "local-store-not-a-real-sheet-id",
-        credentials_path=Path(os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "sheet_credentials.json")),
-        worksheet_name=os.environ.get("GOOGLE_WORKSHEET_NAME") or None,
+        spreadsheet_id="unused-see-data-source-for-user",
         seen_db_path=Path(os.environ.get("SEEN_DB_PATH", "seen_domains.db")),
         max_pages=int(os.environ.get("SCRAPE_MAX_PAGES", "1")),
         keywords=(keyword,),
@@ -147,8 +161,11 @@ def _should_stop() -> bool:
         return _stop_requested
 
 
-def _run_batch(keyword: str) -> None:
+def _run_batch(keyword: str, username: str, is_owner: bool) -> None:
     settings = _settings_for_keyword(keyword)
+    backend = data_source.for_user(username, is_owner)
+    with _lock:
+        _status.backend_name = backend.name
 
     http = requests.Session()
     http.headers["User-Agent"] = USER_AGENT
@@ -158,12 +175,7 @@ def _run_batch(keyword: str) -> None:
 
     try:
         with SeenStore(settings.seen_db_path) as store, BrowserSession() as session:
-            if data_source.is_sheet_connected():
-                sink = SheetSink(
-                    open_worksheet(settings.credentials_path, settings.spreadsheet_id, settings.worksheet_name)
-                )
-            else:
-                sink = local_store.ExcelSink()
+            sink = backend.make_sink()
             sink.ensure_headers()
             writer = LeadWriter(sink, store, settings.batch_size)
 

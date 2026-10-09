@@ -109,8 +109,7 @@
             <div class="hint" style="margin-top:-8px; margin-bottom:16px;">
                 Searches Google for guest-post opportunities matching your keyword, checks each site for
                 relevance and a verified email, and writes confirmed leads straight to
-                {{ 'the connected Google Sheet' if sheet_configured else 'a local leads.xlsx file (no Sheet connected)' }} —
-                visible on the dashboard as soon as each one is found.
+                {{ data_backend_name }} — visible on the dashboard as soon as each one is found.
             </div>
 
             <div id="scrape-idle-form">

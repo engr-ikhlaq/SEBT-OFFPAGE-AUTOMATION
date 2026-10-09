@@ -1,14 +1,16 @@
 """
 local_store.py
-The default, always-available home for scraped leads + outreach status: a
-local Excel file (leads.xlsx), created automatically on first use. No
-setup, no credentials, no sharing a sheet with anyone — works the moment
-the app starts.
+A local Excel file as a lead store — no setup, no credentials, works the
+moment the app starts. Used in two ways (see data_source.py):
+  - the shared fallback at LOCAL_LEADS_FILE, when nothing user-specific
+    applies
+  - a per-user file (user_leads_path) for anyone who hasn't connected
+    their own Sheet — kept completely separate from everyone else's data,
+    including the admin's shared Sheet
 
-Same column layout as the Google Sheet path (sheets_source.py / the
-Keywords tab), so the two are interchangeable: data_source.py picks
-whichever is active, and nothing that reads or writes lead data needs to
-know which one it's actually talking to.
+Same column layout as the Google Sheet path (sheets_source.py / sheet_store.py),
+so the two are interchangeable and a user's local data can be migrated
+into a Sheet later (see data_source.migrate_to_sheet) without conversion.
 
 ExcelSink implements the same two methods offpage.sheets.SheetSink does
 (ensure_headers, append_rows) — the RowSink protocol offpage.writer.
@@ -19,6 +21,7 @@ way it writes to a real Sheet, with no changes to offpage/ itself.
 from __future__ import annotations
 
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,16 +38,26 @@ SHEET_NAME = "Leads"
 # openpyxl has no concurrent-writer story of its own (it's a file format
 # library, not a database) — this app can have the scraper and a manual
 # outreach send both wanting to write around the same time, so every
-# read-modify-write below goes through one lock.
+# read-modify-write below goes through one lock. One lock for every file
+# is coarser than strictly necessary (two different users' files don't
+# actually conflict), but simple and correct, and these are small, quick
+# operations — not worth a per-path lock registry for this app's scale.
 _lock = threading.Lock()
 
 
-def _path() -> Path:
+def default_path() -> Path:
     return Path(os.environ.get("LOCAL_LEADS_FILE", "leads.xlsx"))
 
 
-def _open_or_create() -> Workbook:
-    path = _path()
+def user_leads_path(username: str) -> Path:
+    """Each user who hasn't connected their own Sheet gets their own file,
+    completely separate from everyone else's — including the admin's
+    shared Sheet and the LOCAL_LEADS_FILE default."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", username) or "user"
+    return Path(f"leads_{safe}.xlsx")
+
+
+def _open_or_create(path: Path) -> Workbook:
     if path.exists():
         return load_workbook(path)
     wb = Workbook()
@@ -61,19 +74,23 @@ def _worksheet(wb: Workbook):
 
 class ExcelSink:
     """What the scraper (offpage.writer.LeadWriter) actually writes
-    through — see module docstring."""
+    through — see module docstring. Bind it to a specific user's file with
+    ExcelSink(path=local_store.user_leads_path(username))."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        self._path = path or default_path()
 
     def ensure_headers(self) -> None:
         with _lock:
-            _open_or_create()  # creates the file with headers if it's missing; otherwise a no-op
+            _open_or_create(self._path)  # creates the file with headers if missing; otherwise a no-op
 
     def append_rows(self, rows: list[list]) -> None:
         with _lock:
-            wb = _open_or_create()
+            wb = _open_or_create(self._path)
             ws = _worksheet(wb)
             for row in rows:
                 ws.append(row)
-            wb.save(_path())
+            wb.save(self._path)
 
 
 def is_configured() -> bool:
@@ -81,12 +98,13 @@ def is_configured() -> bool:
     return True
 
 
-def read_recipients(skip_already_sent: bool = True) -> list[dict]:
+def read_recipients(skip_already_sent: bool = True, path: Path | None = None) -> list[dict]:
     """Same shape as sheets_source.read_recipients: a list of row dicts
     (keyed by header) with a 'row' key giving the actual spreadsheet row
     number, for write_result() to target later."""
+    path = path or default_path()
     with _lock:
-        wb = _open_or_create()
+        wb = _open_or_create(path)
         rows = list(_worksheet(wb).iter_rows(values_only=True))
 
     if not rows:
@@ -108,9 +126,23 @@ def read_recipients(skip_already_sent: bool = True) -> list[dict]:
     return out
 
 
-def write_result(row: int, status: str, error: str | None = None) -> None:
+def read_all_rows(path: Path | None = None) -> list[list]:
+    """Every data row as a plain list (no header, no dict, no filtering) —
+    for migrating a file's contents elsewhere (see
+    data_source.migrate_to_sheet), where what's wanted is "everything,
+    exactly as stored" rather than the filtered/keyed view read_recipients
+    gives callers that are about to send mail."""
+    path = path or default_path()
     with _lock:
-        wb = _open_or_create()
+        wb = _open_or_create(path)
+        rows = list(_worksheet(wb).iter_rows(values_only=True, min_row=2))
+    return [[("" if v is None else v) for v in row] for row in rows]
+
+
+def write_result(row: int, status: str, error: str | None = None, path: Path | None = None) -> None:
+    path = path or default_path()
+    with _lock:
+        wb = _open_or_create(path)
         ws = _worksheet(wb)
         header = [cell.value for cell in ws[1]]
         col = {name: i + 1 for i, name in enumerate(header)}
@@ -119,13 +151,20 @@ def write_result(row: int, status: str, error: str | None = None) -> None:
         ws.cell(row=row, column=col["Status"], value=status)
         ws.cell(row=row, column=col["Sent Time"], value=sent_time)
         ws.cell(row=row, column=col["Error"], value=error or "")
-        wb.save(_path())
+        wb.save(path)
 
 
-def get_lead_counts() -> dict:
+def get_lead_counts(path: Path | None = None) -> dict:
     counts = {"total": 0, "sent": 0, "failed": 0, "pending": 0}
-    for record in read_recipients(skip_already_sent=False):
+    for record in read_recipients(skip_already_sent=False, path=path):
         status = str(record.get("Status") or "").strip().lower()
         counts["total"] += 1
         counts[status if status in ("sent", "failed") else "pending"] += 1
     return counts
+
+
+def clear(path: Path) -> None:
+    """Deletes a local file outright — used after migrate_to_sheet() copies
+    its contents elsewhere, so the data exists in exactly one place."""
+    with _lock:
+        path.unlink(missing_ok=True)

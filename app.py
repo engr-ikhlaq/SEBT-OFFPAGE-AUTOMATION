@@ -164,6 +164,7 @@ def _google_account_context() -> dict:
         "manual_account": db.get_manual_email_account(username),
         "google_oauth_configured": google_oauth.is_configured(),
         "manual_gmail_form": ManualGmailForm(),
+        "data_backend_name": data_source.for_user(username, require_owner()).name,
     }
 
 
@@ -409,7 +410,18 @@ def connect_google_callback():
         access_token=credentials.token,
         sheet_id=sheet_id,
     )
-    flash(f"Connected {email} — you can now send from it, and it has its own lead sheet.")
+
+    try:
+        backend = data_source.for_user(session["username"], require_owner())
+        moved = data_source.migrate_to_sheet(session["username"], backend)
+    except Exception:
+        log.exception("Could not migrate local leads into the newly connected Sheet")
+        moved = 0
+
+    flash(
+        f"Connected {email} — you can now send from it, and it has its own lead sheet."
+        + (f" Moved {moved} existing lead(s) into it." if moved else "")
+    )
     return redirect(url_for("index"))
 
 
@@ -623,11 +635,11 @@ def dashboard():
     needle_x, needle_y = _gauge_needle(reply_rate / 100)
     opens_spark = _sparkline_points(opens_by_day)
 
-    sheet_configured = data_source.is_sheet_connected()
+    backend = data_source.for_user(session["username"], require_owner())
     try:
-        lead_counts = data_source.get_lead_counts()
+        lead_counts = backend.get_lead_counts()
     except Exception:
-        log.exception("Could not read lead counts from %s", data_source.backend_name())
+        log.exception("Could not read lead counts from %s", backend.name)
         lead_counts = None
 
     return render_template(
@@ -645,9 +657,8 @@ def dashboard():
         imap_configured=_any_imap_configured(),
         lead_journeys=db.get_lead_journeys(),
         unseen_replies=db.get_unseen_reply_count(),
-        sheet_configured=sheet_configured,
         lead_counts=lead_counts,
-        data_backend_name=data_source.backend_name(),
+        data_backend_name=backend.name,
         is_owner=require_owner(),
     )
 
@@ -667,7 +678,8 @@ def run_outreach():
 
     try:
         cfg, sender = sender_for_current_user()
-        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender)
+        backend = data_source.for_user(session["username"], require_owner())
+        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender, backend)
         flash(
             f"Outreach run complete — sent {len(result['sent'])}, "
             f"failed {len(result['failed'])}, skipped {len(result['skipped'])}."
@@ -719,7 +731,7 @@ def scrape_start():
     keyword = (request.get_json(silent=True) or {}).get("keyword", "").strip()
     if not keyword:
         return {"error": "Enter a target keyword first."}, 400
-    if not scrape_job.start(keyword):
+    if not scrape_job.start(keyword, session["username"], require_owner()):
         return {"error": "A scrape is already running."}, 409
     return scrape_job.get_status()
 
@@ -748,7 +760,8 @@ def scrape_send_now():
         return refusal
     try:
         cfg, sender = sender_for_current_user()
-        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender)
+        backend = data_source.for_user(session["username"], require_owner())
+        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender, backend)
     except Exception as exc:
         return {"error": str(exc)}, 500
     scrape_job.stop()  # don't let a later "continue" click resume after this
