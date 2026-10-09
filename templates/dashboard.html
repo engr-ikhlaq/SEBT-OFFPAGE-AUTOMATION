@@ -179,7 +179,16 @@
         <!-- lead journeys + recent activity -->
         <div class="two-col">
             <div class="panel">
-                <h2>Guest-post outreach</h2>
+                <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
+                    <h2>Guest-post outreach</h2>
+                    {% if lead_counts and lead_counts.total %}
+                    <form method="POST" action="{{ url_for('clear_leads') }}"
+                          onsubmit="return confirm('Permanently delete all {{ lead_counts.total }} lead(s) in {{ data_backend_name }}? This cannot be undone.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" style="font-size:12px; padding:6px 12px; color:var(--accent-2);">&#128465; Clear leads</button>
+                    </form>
+                    {% endif %}
+                </div>
                 <div class="hint">Reading from {{ data_backend_name }}.</div>
                 <div class="journey-list">
                     {% for lead in lead_journeys %}

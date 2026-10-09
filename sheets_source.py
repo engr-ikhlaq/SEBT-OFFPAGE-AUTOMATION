@@ -110,6 +110,15 @@ def get_lead_counts() -> dict:
     return counts
 
 
+def clear_leads() -> None:
+    """Wipes every data row but keeps the header row — this is the ADMIN's
+    shared Sheet, so clearing it affects everyone who reads from it."""
+    ws = _get_worksheet()
+    header = ws.row_values(1) or REQUIRED_HEADERS
+    ws.clear()
+    ws.update(range_name=f"A1:{gspread.utils.rowcol_to_a1(1, len(header))}", values=[header])
+
+
 def write_result(row: int, status: str, error: Optional[str] = None):
     """
     Writes Status / Sent Time / Error back to a specific row after a send

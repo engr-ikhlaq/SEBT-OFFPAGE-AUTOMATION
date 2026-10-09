@@ -133,6 +133,37 @@
             </div>
         </div>
 
+        <!-- =============== Scraped leads list — fills in live while a scrape is running =============== -->
+        <div class="panel">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
+                <h2>Scraped leads <span class="hint" style="font-weight:400;">(<span id="leads-count">{{ scraped_leads|length }}</span> in {{ data_backend_name }})</span></h2>
+                {% if scraped_leads %}
+                <form method="POST" action="{{ url_for('clear_leads') }}"
+                      onsubmit="return confirm('Permanently delete every lead in {{ data_backend_name }}? This cannot be undone.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" style="font-size:12px; padding:6px 12px; color:var(--accent-2);">&#128465; Clear leads</button>
+                </form>
+                {% endif %}
+            </div>
+            <table id="leads-table">
+                <thead>
+                <tr><th>Domain</th><th>Email</th><th>Keyword</th><th>Status</th></tr>
+                </thead>
+                <tbody id="leads-tbody">
+                    {% for lead in scraped_leads %}
+                    <tr>
+                        <td>{{ lead.Domain or '—' }}</td>
+                        <td>{{ lead.Email }}</td>
+                        <td>{{ lead.Keyword or '—' }}</td>
+                        <td>{{ lead.Status or 'pending' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="empty">No leads scraped yet — start a scrape above and they'll show up here as they're found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
         <!-- =============== Manual campaign =============== -->
         <form method="POST" action="{{ url_for('index') }}" enctype="multipart/form-data">
             {{ form.csrf_token }}
@@ -213,8 +244,32 @@
   const modalContinueBtn = document.getElementById('modal-continue-btn');
   const modalDismissBtn = document.getElementById('modal-dismiss-btn');
 
+  const leadsTbody = document.getElementById('leads-tbody');
+  const leadsCountEl = document.getElementById('leads-count');
+
   let pollTimer = null;
   let modalShownForBatch = false;  // don't re-pop the modal every poll tick
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function refreshLeadsTable() {
+    fetch('/leads/recent').then(r => r.json()).then(data => {
+      if (!data.leads) return;
+      leadsCountEl.textContent = data.leads.length;
+      if (!data.leads.length) {
+        leadsTbody.innerHTML = '<tr><td colspan="4" class="empty">No leads scraped yet — start a scrape above and they\'ll show up here as they\'re found.</td></tr>';
+        return;
+      }
+      leadsTbody.innerHTML = data.leads.map(lead => `<tr>
+          <td>${escapeHtml(lead.Domain) || '—'}</td>
+          <td>${escapeHtml(lead.Email)}</td>
+          <td>${escapeHtml(lead.Keyword) || '—'}</td>
+          <td>${escapeHtml(lead.Status) || 'pending'}</td>
+        </tr>`).join('');
+    }).catch(() => {});
+  }
 
   function api(path, body) {
     return fetch(path, {
@@ -257,6 +312,7 @@
 
   function poll() {
     fetch('/scrape/status').then(r => r.json()).then(applyStatus).catch(() => {});
+    refreshLeadsTable();
   }
 
   function startPolling() {

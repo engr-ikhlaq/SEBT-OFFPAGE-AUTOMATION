@@ -159,12 +159,21 @@ def _google_account_context() -> dict:
     """Shared by every index.html render call, so the connect-status panel
     (and the fallback-to-SMTP note) always reflects the same lookup."""
     username = session.get("username", "")
+    backend = data_source.for_user(username, require_owner())
+    try:
+        scraped_leads = backend.read_recipients(skip_already_sent=False)
+        scraped_leads.sort(key=lambda lead: lead.get("row", 0), reverse=True)
+        scraped_leads = scraped_leads[:50]
+    except Exception:
+        log.exception("Could not read leads from %s", backend.name)
+        scraped_leads = []
     return {
         "google_account": db.get_google_account(username),
         "manual_account": db.get_manual_email_account(username),
         "google_oauth_configured": google_oauth.is_configured(),
         "manual_gmail_form": ManualGmailForm(),
-        "data_backend_name": data_source.for_user(username, require_owner()).name,
+        "data_backend_name": backend.name,
+        "scraped_leads": scraped_leads,
     }
 
 
@@ -661,6 +670,41 @@ def dashboard():
         data_backend_name=backend.name,
         is_owner=require_owner(),
     )
+
+
+@app.route("/leads/clear", methods=["POST"])
+def clear_leads():
+    """Wipes every scraped lead in the CALLER's own backend (their local
+    file, their own connected Sheet, or — owner only — the shared admin
+    Sheet). Never touches another user's data, since data_source.for_user()
+    already resolves to exactly one person's own store."""
+    if not require_login():
+        return redirect(url_for("login"))
+
+    backend = data_source.for_user(session["username"], require_owner())
+    try:
+        backend.clear()
+        flash(f"Cleared all leads from {backend.name}.")
+    except Exception as e:
+        flash(f"Could not clear leads: {e}")
+
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/leads/recent")
+def leads_recent():
+    """JSON list of the caller's own scraped leads — polled from the
+    Compose page so leads show up there as the scraper finds them, not
+    only after a full page reload."""
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    backend = data_source.for_user(session["username"], require_owner())
+    try:
+        leads = backend.read_recipients(skip_already_sent=False)
+    except Exception as e:
+        return {"error": str(e)}, 500
+    leads.sort(key=lambda lead: lead.get("row", 0), reverse=True)
+    return {"leads": leads[:50], "backend_name": backend.name}
 
 
 @app.route("/dashboard/replies-seen", methods=["POST"])
