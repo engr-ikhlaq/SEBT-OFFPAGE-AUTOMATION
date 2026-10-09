@@ -154,5 +154,24 @@ class SendBatchTransportTests(unittest.TestCase):
         self.assertEqual(sent, ["a@x.com", "b@x.com"])
 
 
+class ThrottleDelayTests(unittest.TestCase):
+    """A fixed, identical gap between every send is itself a bot-like
+    pattern - _throttle_delay varies it instead of returning base_seconds
+    verbatim."""
+
+    def test_stays_within_the_06x_to_18x_range(self):
+        for _ in range(200):
+            delay = mailer._throttle_delay(5)
+            self.assertGreaterEqual(delay, 5 * 0.6)
+            self.assertLessEqual(delay, 5 * 1.8)
+
+    def test_repeated_calls_are_not_all_identical(self):
+        delays = {mailer._throttle_delay(5) for _ in range(20)}
+        self.assertGreater(len(delays), 1)
+
+    def test_zero_base_stays_zero(self):
+        self.assertEqual(mailer._throttle_delay(0), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

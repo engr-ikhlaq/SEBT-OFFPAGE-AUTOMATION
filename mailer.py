@@ -37,6 +37,7 @@ Transport:
 
 import base64
 import os
+import random
 import smtplib
 import ssl
 import time
@@ -167,6 +168,15 @@ def personalize(template: str, fields: dict[str, str]) -> str:
     return out
 
 
+def _throttle_delay(base_seconds: float) -> float:
+    """A send-to-send pause varied around base_seconds (0.6x-1.8x) rather
+    than the exact same gap every time - a real person pausing between
+    emails doesn't do it to the second, and an identical interval, repeated
+    across every message in a run, is itself a pattern an exact-timing
+    send never has."""
+    return base_seconds * random.uniform(0.6, 1.8)
+
+
 def build_message(cfg: MailerConfig, to_email: str, subject: str,
                    html_body: str, text_body: str, unsubscribe_url: str,
                    in_reply_to: str | None = None) -> EmailMessage:
@@ -261,8 +271,9 @@ def send_batch(cfg: MailerConfig, sender, recipients: list[str], subject: str,
                 on_progress(i, len(recipients), to_email, status)
 
             # Throttle — do NOT remove this. It's the main thing standing
-            # between "normal sender" and "looks like a bot blast."
+            # between "normal sender" and "looks like a bot blast." Varied
+            # rather than fixed, so the gaps themselves don't form a pattern.
             if i < len(recipients):
-                time.sleep(cfg.send_delay_seconds)
+                time.sleep(_throttle_delay(cfg.send_delay_seconds))
 
     return results
