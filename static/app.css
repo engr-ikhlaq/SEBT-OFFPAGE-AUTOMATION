@@ -280,3 +280,42 @@ button.btn-primary:hover { opacity: 0.88; }
 .modal-btn-secondary:hover { background: rgba(255,255,255,0.16); }
 .modal-btn-ghost { background: transparent; color: rgba(255,255,255,0.5); font-weight: 600 !important; }
 .modal-btn-ghost:hover { color: rgba(255,255,255,0.8); }
+
+/* ---- dashboard page background: the same photo as the hero, now behind
+   the ENTIRE page, fixed so it doesn't scroll with the content. The shell
+   becomes a dark frosted-glass panel over it; .widget (already dark) and
+   .panel (kept light, for existing table/text styling) need no changes -
+   only the chrome that used to sit directly on the plain light shell
+   (sidebar, topbar text, nav pills, greeting) needs a light-on-dark flip. ---- */
+body.dashboard-bg {
+  background: linear-gradient(180deg, rgba(6,8,14,0.80), rgba(6,8,14,0.92)),
+              url('images/profile-hero.jpg') center 15% / cover fixed no-repeat;
+  min-height: 100vh;
+}
+body.dashboard-bg .shell {
+  background: rgba(21,22,30,0.74);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,0.65);
+}
+body.dashboard-bg .sidebar {
+  background: rgba(255,255,255,0.05);
+  border-right: 1px solid rgba(255,255,255,0.08);
+}
+body.dashboard-bg .sidebar a { color: rgba(255,255,255,0.55); }
+body.dashboard-bg .sidebar a.active, body.dashboard-bg .sidebar a:hover {
+  background: rgba(255,138,61,0.22); color: var(--accent);
+}
+body.dashboard-bg .topbar .brand-line { color: rgba(255,255,255,0.55); }
+body.dashboard-bg .topbar .brand-line b,
+body.dashboard-bg .topbar h1 { color: #fff; }
+body.dashboard-bg .topbar .sub { color: rgba(255,255,255,0.5); }
+body.dashboard-bg .profile-chip .who { color: #fff; }
+body.dashboard-bg .profile-chip .role { color: rgba(255,255,255,0.5); }
+body.dashboard-bg .nav-links a, body.dashboard-bg .nav-links button {
+  background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); color: #fff;
+}
+body.dashboard-bg .greeting-block .hi { color: #fff; }
+body.dashboard-bg .greeting-block .ask { color: rgba(255,255,255,0.65); }
+/* Only hints sitting directly on the dark shell (not the one inside the
+   light .panel further down, which needs its normal dark-on-light color). */
+body.dashboard-bg .main > .hint { color: rgba(255,255,255,0.45); }
