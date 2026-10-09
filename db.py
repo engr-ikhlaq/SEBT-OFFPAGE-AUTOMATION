@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS lead_dashboard_clears (
     cleared_at      TEXT NOT NULL
 );
 
+-- Self-service "forgot password" (see app.py's /forgot-password,
+-- /reset-password/<token>). A token is single-use and short-lived; the
+-- email it's sent to is never stored here - it's looked up fresh from
+-- google_accounts/manual_email_accounts each time (_recovery_email_for),
+-- so it can't drift out of sync with a user's actual connected account.
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token           TEXT PRIMARY KEY,
+    username        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    used_at         TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_recipients_campaign ON recipients(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_recipients_token ON recipients(token);
 CREATE INDEX IF NOT EXISTS idx_events_recipient ON events(recipient_id);
@@ -476,6 +489,50 @@ def list_users():
     with get_conn() as conn:
         rows = conn.execute("SELECT id, username, role, created_at, created_by FROM users ORDER BY id").fetchall()
         return [dict(r) for r in rows]
+
+
+def update_user_password(username: str, password_hash: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET password_hash=? WHERE username=?", (password_hash, username))
+
+
+# ---------------------------------------------------------------------------
+# Self-service password reset tokens
+# ---------------------------------------------------------------------------
+
+def create_password_reset_token(username: str, ttl_hours: int = 1) -> str:
+    """One-time, short-lived token for /reset-password/<token>. Also sweeps
+    out anything already expired, so this table doesn't grow forever."""
+    token = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM password_reset_tokens WHERE expires_at < ?", (now.isoformat(),))
+        conn.execute(
+            "INSERT INTO password_reset_tokens (token, username, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?)",
+            (token, username, now.isoformat(), (now + timedelta(hours=ttl_hours)).isoformat()),
+        )
+    return token
+
+
+def get_valid_password_reset_token(token: str):
+    """The token's row if it exists, hasn't been used, and hasn't expired - None otherwise."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM password_reset_tokens WHERE token=? AND used_at IS NULL", (token,)
+        ).fetchone()
+    if not row:
+        return None
+    if datetime.now(timezone.utc) > datetime.fromisoformat(row["expires_at"]):
+        return None
+    return dict(row)
+
+
+def mark_password_reset_token_used(token: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE password_reset_tokens SET used_at=? WHERE token=?", (now_iso(), token)
+        )
 
 
 def count_users() -> int:

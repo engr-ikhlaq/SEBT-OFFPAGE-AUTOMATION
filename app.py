@@ -38,7 +38,7 @@ from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
 from flask_wtf.csrf import CSRFProtect
 from wtforms import StringField, TextAreaField, PasswordField, BooleanField
-from wtforms.validators import DataRequired, Optional
+from wtforms.validators import DataRequired, Optional, Length, EqualTo
 from email_validator import validate_email, EmailNotValidError
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -105,6 +105,55 @@ def save_suppression_list(emails: set):
 
 def get_mailer_config() -> MailerConfig:
     return MailerConfig.from_env()
+
+
+def _recovery_email_for(username: str) -> str | None:
+    """The address a password-reset link goes to: whichever Gmail this user
+    has connected (OAuth or manual). Derived fresh each call rather than
+    stored, so it can never drift out of sync with the connect/disconnect
+    buttons on the Compose page. None until onboarding is complete — which,
+    since connecting Gmail is required before using the app, is only the
+    user's own very first login."""
+    google_account = db.get_google_account(username)
+    if google_account:
+        return google_account["google_email"]
+    manual_account = db.get_manual_email_account(username)
+    if manual_account:
+        return manual_account["email"]
+    return None
+
+
+def _send_password_reset_email(to_email: str, reset_url: str) -> None:
+    """Sent while logged OUT, so this always goes through the shared
+    SMTP_* config (.env) rather than sender_for_current_user() — there's no
+    "current user" yet. A plain transactional message: no tracking pixel,
+    no unsubscribe link, nothing that routes it through suppression_list.json
+    (a password reset isn't marketing, and unsubscribing from campaigns
+    shouldn't block someone from getting back into their own account)."""
+    import smtplib
+    import ssl
+    from email.message import EmailMessage
+
+    cfg = get_mailer_config()
+    msg = EmailMessage()
+    msg["Subject"] = "Reset your password — Guest Posting Automation"
+    msg["From"] = cfg.from_email
+    msg["To"] = to_email
+    msg.set_content(
+        f"A password reset was requested for your account.\n\n"
+        f"Reset it here (expires in 1 hour): {reset_url}\n\n"
+        f"If you didn't request this, you can ignore this email."
+    )
+
+    server = smtplib.SMTP(cfg.host, cfg.port)
+    try:
+        server.ehlo()
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+        server.login(cfg.username, cfg.password)
+        server.send_message(msg)
+    finally:
+        server.quit()
 
 
 def _display_name_for(username: str) -> str:
@@ -257,6 +306,17 @@ class ManualGmailForm(FlaskForm):
     app_password = PasswordField("App Password", validators=[DataRequired()])
 
 
+class ForgotPasswordForm(FlaskForm):
+    username = StringField("Username", validators=[DataRequired()])
+
+
+class ResetPasswordForm(FlaskForm):
+    password = PasswordField("New password", validators=[DataRequired(), Length(min=8)])
+    confirm_password = PasswordField(
+        "Confirm new password", validators=[DataRequired(), EqualTo("password", message="Passwords must match.")]
+    )
+
+
 class CampaignForm(FlaskForm):
     subject = StringField("Subject", validators=[DataRequired()])
     link_url = StringField("Link to include in the email", validators=[DataRequired()])
@@ -296,10 +356,50 @@ def login():
     return render_template("login.html", form=form)
 
 
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    form = ForgotPasswordForm()
+    if form.validate_on_submit():
+        username = form.username.data.strip()
+        user = db.get_user_by_username(username)
+        recovery_email = _recovery_email_for(username) if user else None
+        if recovery_email:
+            token = db.create_password_reset_token(username)
+            reset_url = url_for("reset_password", token=token, _external=True)
+            try:
+                _send_password_reset_email(recovery_email, reset_url)
+            except Exception:
+                log.exception("Could not send password reset email for %s", username)
+        # Same message either way — whether the username exists, and
+        # whether it has a recovery email on file, is not something a
+        # stranger submitting this form should be able to tell apart.
+        flash("If that account has a connected Gmail on file, a reset link has been sent to it.")
+        return redirect(url_for("login"))
+    return render_template("forgot_password.html", form=form)
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    token_row = db.get_valid_password_reset_token(token)
+    if not token_row:
+        flash("That reset link is invalid or has expired — request a new one.")
+        return redirect(url_for("forgot_password"))
+
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        db.update_user_password(token_row["username"], generate_password_hash(form.password.data))
+        db.mark_password_reset_token_used(token)
+        flash("Password updated — log in with your new password.")
+        return redirect(url_for("login"))
+    return render_template("reset_password.html", form=form)
+
+
 @app.route("/onboarding", methods=["GET", "POST"])
 def onboarding():
-    """Shown right after login until the user connects Gmail (by either
-    method) or chooses to skip — not forced every time, just once."""
+    """Shown right after login, and enforced on every other page (see
+    _require_gmail_connection below) until the user connects Gmail, by
+    either method — there's no "skip" anymore, since every user needs
+    their own sending identity before they can scrape or send anything."""
     if not require_login():
         return redirect(url_for("login"))
     if db.get_google_account(session["username"]) or db.get_manual_email_account(session["username"]):
@@ -317,6 +417,46 @@ def onboarding():
         google_oauth_configured=google_oauth.is_configured(),
         is_owner=require_owner(),
     )
+
+
+# Endpoints reachable before/without a connected Gmail account - account
+# management, the connect flow itself, and anything a logged-out visitor
+# hits (forgot/reset password, unsubscribe, tracking pixels/links).
+_ONBOARDING_EXEMPT_ENDPOINTS = {
+    "login", "logout", "onboarding", "forgot_password", "reset_password",
+    "users", "delete_user", "leave_access",
+    "connect_google", "connect_google_callback", "connect_google_disconnect",
+    "connect_gmail_manual", "connect_gmail_manual_disconnect",
+    "unsubscribe", "static", None,
+}
+
+# These return JSON (polled by fetch() from Compose), so a gated one needs
+# a JSON error, not a redirect to a page the caller can't render.
+_ONBOARDING_GATED_JSON_ENDPOINTS = {
+    "scrape_status", "scrape_start", "scrape_continue", "scrape_stop",
+    "scrape_send_now", "leads_recent",
+}
+
+
+@app.before_request
+def _require_gmail_connection():
+    """Connecting Gmail (OAuth or manual) is no longer optional — every
+    user needs their own sending identity before they can scrape or send
+    anything. This is the single enforcement point so individual routes
+    don't each need their own check; see _ONBOARDING_EXEMPT_ENDPOINTS for
+    what stays reachable regardless (account management, the connect flow
+    itself, and anything a logged-out visitor can hit)."""
+    if not require_login():
+        return None
+    endpoint = request.endpoint
+    if endpoint in _ONBOARDING_EXEMPT_ENDPOINTS or (endpoint and endpoint.startswith("tracking.")):
+        return None
+    if db.get_google_account(session["username"]) or db.get_manual_email_account(session["username"]):
+        return None
+    if endpoint in _ONBOARDING_GATED_JSON_ENDPOINTS:
+        return {"error": "Connect a Gmail account first."}, 403
+    flash("Connect a Gmail account first — it's required before you can scrape or send.")
+    return redirect(url_for("onboarding"))
 
 
 @app.route("/logout")

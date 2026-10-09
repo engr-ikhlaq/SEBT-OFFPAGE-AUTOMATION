@@ -8,4 +8,5 @@ tracking.db
 seen_domains.db
 suppression_list.json
 leads.xlsx
+leads_*.xlsx
 venv/
