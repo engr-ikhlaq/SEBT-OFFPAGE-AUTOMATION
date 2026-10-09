@@ -60,23 +60,21 @@
             <div class="ask">&#128269; {{ overview.total_sent or 0 }} sent &middot; {{ overview.total_replies or 0 }} replies &middot; {{ lead_journeys|length }} leads tracked</div>
         </div>
 
-        <!-- hero: the action toolbar anchored at the bottom of a dark glass card
-             (the photo itself lives on the page background now, not here) -->
-        <div class="hero">
-            <div class="hero-pills">
-                <form method="POST" action="{{ url_for('check_replies') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">🔍 Check replies</button>
-                </form>
-                <form method="POST" action="{{ url_for('run_followups') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">⏰ Follow-ups</button>
-                </form>
-                <form method="POST" action="{{ url_for('run_outreach') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;">&#9993; Send to new leads</button>
-                </form>
-            </div>
+        <!-- action toolbar: just the pills, floating directly on the page
+             background (no card wrapper) -->
+        <div class="hero-pills">
+            <form method="POST" action="{{ url_for('check_replies') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">🔍 Check replies</button>
+            </form>
+            <form method="POST" action="{{ url_for('run_followups') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">⏰ Follow-ups</button>
+            </form>
+            <form method="POST" action="{{ url_for('run_outreach') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;">&#9993; Send to new leads</button>
+            </form>
         </div>
 
         <!-- stat widgets: 3 small cards + a tall gauge spanning both rows,

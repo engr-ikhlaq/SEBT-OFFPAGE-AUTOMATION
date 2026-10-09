@@ -94,17 +94,9 @@ a { color: inherit; }
   font-size: 14px; margin-top: 8px;
 }
 
-/* ---- hero: just the pill toolbar, anchored at the bottom of a dark card
-   (no photo here anymore — the same image is the whole page's background
-   now, see body.dashboard-bg, so this stays a plain dark/glass box). ---- */
-.hero {
-  position: relative; border-radius: var(--radius-md); overflow: hidden;
-  min-height: 210px; margin-bottom: 22px;
-  background: linear-gradient(135deg, #1a1b22, #0d0f14);
-  display: flex; align-items: flex-end; justify-content: flex-end;
-  padding: 18px 20px;
-}
-.hero-pills { position: relative; z-index: 1; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+/* ---- action toolbar: just the pills, no card around them — they float
+   directly on the page background (the photo, see body.dashboard-bg). ---- */
+.hero-pills { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
 .hero-pill {
   display: flex; align-items: center; gap: 7px; font-size: 12px;
   background: rgba(255,255,255,0.16); backdrop-filter: blur(8px);
@@ -305,7 +297,7 @@ body.dashboard-bg .sidebar a.active, body.dashboard-bg .sidebar a:hover {
 }
 /* Cards that used to be fully opaque are now glass too, so the photo
    shows through everywhere, not just the gaps between them. */
-body.dashboard-bg .widget, body.dashboard-bg .hero {
+body.dashboard-bg .widget {
   background: rgba(21,22,27,0.45);
   backdrop-filter: blur(8px);
   border-color: rgba(255,255,255,0.1);
