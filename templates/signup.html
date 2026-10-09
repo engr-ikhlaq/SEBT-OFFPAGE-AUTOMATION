@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sign up — Guest Posting Automation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="center-page">
+
+  <div class="login-card">
+    <div class="brand"><div class="logo"></div> Guest Posting Automation</div>
+    <h1>Sign up with Gmail</h1>
+    <p class="sub">
+      Your Gmail address and its App Password both create your account and connect it for
+      sending — one step, nothing else to set up. They also double as your login for next time.
+    </p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+      {{ form.csrf_token }}
+      <label class="field-label" for="{{ form.email.id }}">Gmail address</label>
+      {{ form.email(id=form.email.id, placeholder="you@gmail.com") }}
+      {% if form.email.errors %}
+        <div class="field-errors">{{ form.email.errors[0] }}</div>
+      {% endif %}
+      <label class="field-label" for="{{ form.app_password.id }}">App Password</label>
+      {{ form.app_password(id=form.app_password.id, placeholder="16-character App Password") }}
+      {% if form.app_password.errors %}
+        <div class="field-errors">{{ form.app_password.errors[0] }}</div>
+      {% endif %}
+      <div class="hint" style="margin:-8px 0 14px;">
+        Not your normal Gmail password — generate one at
+        <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>
+        (needs 2-Step Verification turned on first).
+      </div>
+      <button type="submit" class="btn-primary">Sign up</button>
+    </form>
+    <div style="text-align:center; margin-top:14px;">
+      <a href="{{ url_for('login') }}" style="color:var(--muted); font-size:13px;">Already have an account? Log in</a>
+    </div>
+  </div>
+
+</body>
+</html>

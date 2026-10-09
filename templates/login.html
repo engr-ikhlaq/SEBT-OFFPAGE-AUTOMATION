@@ -33,8 +33,9 @@
       {% endif %}
       <button type="submit" class="btn-primary">Log in</button>
     </form>
-    <div style="text-align:center; margin-top:14px;">
+    <div style="text-align:center; margin-top:14px; display:flex; justify-content:center; gap:16px;">
       <a href="{{ url_for('forgot_password') }}" style="color:var(--muted); font-size:13px;">Forgot password?</a>
+      <a href="{{ url_for('signup') }}" style="color:var(--muted); font-size:13px;">Sign up with Gmail</a>
     </div>
   </div>
 

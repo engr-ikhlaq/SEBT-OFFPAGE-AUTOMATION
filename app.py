@@ -156,6 +156,26 @@ def _send_password_reset_email(to_email: str, reset_url: str) -> None:
         server.quit()
 
 
+def _verify_gmail_app_password(email: str, app_password: str) -> None:
+    """Confirms an (email, App Password) pair actually works by logging
+    into Gmail's SMTP server with it — used at /signup and when resetting
+    a Gmail-based account's password, so a typo or a copy-pasted "normal"
+    password is caught immediately instead of failing silently the first
+    time something tries to send. Raises on failure; the exception message
+    is safe to flash as-is (smtplib's are already human-readable)."""
+    import smtplib
+    import ssl
+
+    server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+    try:
+        server.ehlo()
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+        server.login(email, app_password)
+    finally:
+        server.quit()
+
+
 def _display_name_for(username: str) -> str:
     """'ikhlaq-wahid' -> 'Ikhlaq Wahid' — used as the From name for a
     connected account, so each user signs as themselves rather than a
@@ -296,11 +316,6 @@ class LoginForm(FlaskForm):
     password = PasswordField("Password", validators=[DataRequired()])
 
 
-class AddUserForm(FlaskForm):
-    username = StringField("Username", validators=[DataRequired()])
-    password = PasswordField("Password", validators=[DataRequired()])
-
-
 class ManualGmailForm(FlaskForm):
     email = StringField("Gmail address", validators=[DataRequired()])
     app_password = PasswordField("App Password", validators=[DataRequired()])
@@ -315,6 +330,10 @@ class ResetPasswordForm(FlaskForm):
     confirm_password = PasswordField(
         "Confirm new password", validators=[DataRequired(), EqualTo("password", message="Passwords must match.")]
     )
+
+
+class ResetGmailAppPasswordForm(FlaskForm):
+    app_password = PasswordField("New App Password", validators=[DataRequired()])
 
 
 class CampaignForm(FlaskForm):
@@ -356,6 +375,43 @@ def login():
     return render_template("login.html", form=form)
 
 
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    """Self-service account creation: a Gmail address + its App Password
+    is both verified (live SMTP login) and immediately connected as the
+    account's sending identity - one step instead of create-account-then-
+    separately-onboard. That same App Password also becomes this user's
+    login password (see login()'s check_password_hash), so there's exactly
+    one secret to keep track of, not two."""
+    if require_login():
+        return redirect(url_for("index"))
+
+    form = ManualGmailForm()
+    if form.validate_on_submit():
+        email = form.email.data.strip().lower()
+        app_password = form.app_password.data
+
+        if db.get_user_by_username(email) or db.find_username_by_connected_email(email):
+            flash(f"{email} already has an account — log in instead.")
+            return redirect(url_for("login"))
+
+        try:
+            _verify_gmail_app_password(email, app_password)
+        except Exception as e:
+            flash(f"Could not verify that Gmail address and App Password: {e}")
+            return render_template("signup.html", form=form)
+
+        user_id = db.create_user(email, generate_password_hash(app_password), role="member", created_by="self-signup")
+        db.save_manual_email_account(email, email, app_password)
+        session["user_id"] = user_id
+        session["username"] = email
+        session["role"] = "member"
+        flash(f"Welcome! {email} is connected and ready to go.")
+        return redirect(url_for("index"))
+
+    return render_template("signup.html", form=form)
+
+
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
     form = ForgotPasswordForm()
@@ -385,13 +441,35 @@ def reset_password(token):
         flash("That reset link is invalid or has expired — request a new one.")
         return redirect(url_for("forgot_password"))
 
+    username = token_row["username"]
+    manual_account = db.get_manual_email_account(username)
+
+    # A self-signed-up account's password IS its Gmail App Password (see
+    # signup()) - resetting it to an arbitrary string would silently break
+    # sending, so this path asks for a NEW App Password instead, verifies
+    # it the same way signup does, and updates both records together.
+    if manual_account:
+        form = ResetGmailAppPasswordForm()
+        if form.validate_on_submit():
+            try:
+                _verify_gmail_app_password(manual_account["email"], form.app_password.data)
+            except Exception as e:
+                flash(f"Could not verify that App Password: {e}")
+                return render_template("reset_password.html", form=form, email=manual_account["email"])
+            db.update_user_password(username, generate_password_hash(form.app_password.data))
+            db.save_manual_email_account(username, manual_account["email"], form.app_password.data)
+            db.mark_password_reset_token_used(token)
+            flash("App Password updated — log in with it.")
+            return redirect(url_for("login"))
+        return render_template("reset_password.html", form=form, email=manual_account["email"])
+
     form = ResetPasswordForm()
     if form.validate_on_submit():
-        db.update_user_password(token_row["username"], generate_password_hash(form.password.data))
+        db.update_user_password(username, generate_password_hash(form.password.data))
         db.mark_password_reset_token_used(token)
         flash("Password updated — log in with your new password.")
         return redirect(url_for("login"))
-    return render_template("reset_password.html", form=form)
+    return render_template("reset_password.html", form=form, email=None)
 
 
 @app.route("/onboarding", methods=["GET", "POST"])
@@ -423,7 +501,7 @@ def onboarding():
 # management, the connect flow itself, and anything a logged-out visitor
 # hits (forgot/reset password, unsubscribe, tracking pixels/links).
 _ONBOARDING_EXEMPT_ENDPOINTS = {
-    "login", "logout", "onboarding", "forgot_password", "reset_password",
+    "login", "signup", "logout", "onboarding", "forgot_password", "reset_password",
     "users", "delete_user", "leave_access",
     "connect_google", "connect_google_callback", "connect_google_disconnect",
     "connect_gmail_manual", "connect_gmail_manual_disconnect",
@@ -468,25 +546,14 @@ def logout():
 @app.route("/users", methods=["GET", "POST"])
 def users():
     """Visible to everyone logged in (so anyone can find the 'Leave access'
-    option below) - but only the owner can add or remove *other* people."""
+    option below) - but only the owner can remove *other* people, or see
+    the sign-up link to invite them. New accounts are self-service (see
+    signup()) - the owner no longer sets anyone else's password."""
     if not require_login():
         return redirect(url_for("login"))
 
-    form = AddUserForm()
-    if require_owner() and form.validate_on_submit():
-        username = form.username.data.strip()
-        if db.get_user_by_username(username):
-            flash(f"'{username}' already has an account.")
-        else:
-            db.create_user(
-                username, generate_password_hash(form.password.data),
-                role="member", created_by=session["username"],
-            )
-            flash(f"Added '{username}'. Share their password with them directly, not over chat/email.")
-        return redirect(url_for("users"))
-
     return render_template(
-        "users.html", form=form,
+        "users.html",
         users=db.list_users() if require_owner() else None,
         current_user_id=session["user_id"], is_owner=require_owner(),
     )

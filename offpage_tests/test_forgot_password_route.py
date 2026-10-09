@@ -37,6 +37,8 @@ class ForgotPasswordRouteTests(unittest.TestCase):
         db.create_user("alice", "oldhash", role="member", created_by="owner")
         db.save_manual_email_account("alice", "alice@gmail.com", "app-pass")
         db.create_user("noemail", "oldhash", role="member", created_by="owner")  # never finished onboarding
+        db.create_user("oauthuser", "oldhash", role="member", created_by="owner")
+        db.save_google_account("oauthuser", "oauthuser@gmail.com", "refresh", "access", "sheet-1")
 
     def test_a_known_user_with_a_connected_email_gets_a_token_emailed(self):
         client = app_module.app.test_client()
@@ -65,8 +67,37 @@ class ForgotPasswordRouteTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 302)
         send_mail.assert_not_called()
 
-    def test_a_valid_token_lets_the_password_actually_change(self):
+    def test_a_valid_token_for_a_gmail_account_asks_for_a_new_app_password(self):
         token = db.create_password_reset_token("alice")
+        client = app_module.app.test_client()
+
+        with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
+            resp = client.post(
+                f"/reset-password/{token}",
+                data={"app_password": "new app pass"},
+                follow_redirects=False,
+            )
+
+        verify.assert_called_once_with("alice@gmail.com", "new app pass")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIsNone(db.get_valid_password_reset_token(token))  # single-use
+        from werkzeug.security import check_password_hash
+        self.assertTrue(check_password_hash(db.get_user_by_username("alice")["password_hash"], "new app pass"))
+        self.assertEqual(db.get_manual_email_account("alice")["app_password"], "new app pass")
+
+    def test_an_app_password_that_fails_live_verification_is_rejected(self):
+        token = db.create_password_reset_token("alice")
+        client = app_module.app.test_client()
+
+        with mock.patch.object(app_module, "_verify_gmail_app_password", side_effect=Exception("bad credentials")):
+            resp = client.post(f"/reset-password/{token}", data={"app_password": "wrong"})
+
+        self.assertEqual(resp.status_code, 200)  # re-rendered with an error, not redirected
+        self.assertIsNotNone(db.get_valid_password_reset_token(token))  # not consumed
+        self.assertEqual(db.get_manual_email_account("alice")["app_password"], "app-pass")  # unchanged
+
+    def test_a_valid_token_for_an_oauth_only_account_uses_a_plain_password_form(self):
+        token = db.create_password_reset_token("oauthuser")
         client = app_module.app.test_client()
 
         resp = client.post(
@@ -76,25 +107,14 @@ class ForgotPasswordRouteTests(unittest.TestCase):
         )
 
         self.assertEqual(resp.status_code, 302)
-        self.assertIsNone(db.get_valid_password_reset_token(token))  # single-use
         from werkzeug.security import check_password_hash
-        self.assertTrue(check_password_hash(db.get_user_by_username("alice")["password_hash"], "brandnewpass123"))
+        self.assertTrue(check_password_hash(db.get_user_by_username("oauthuser")["password_hash"], "brandnewpass123"))
 
     def test_a_bogus_token_is_rejected_without_touching_any_password(self):
         client = app_module.app.test_client()
         resp = client.get("/reset-password/not-a-real-token", follow_redirects=False)
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/forgot-password", resp.headers["Location"])
-
-    def test_mismatched_passwords_are_rejected(self):
-        token = db.create_password_reset_token("alice")
-        client = app_module.app.test_client()
-        resp = client.post(
-            f"/reset-password/{token}",
-            data={"password": "brandnewpass123", "confirm_password": "somethingelse"},
-        )
-        self.assertEqual(resp.status_code, 200)  # re-rendered with a validation error
-        self.assertIsNotNone(db.get_valid_password_reset_token(token))  # not consumed
 
 
 if __name__ == "__main__":

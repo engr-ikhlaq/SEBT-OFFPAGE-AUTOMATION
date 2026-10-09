@@ -27,18 +27,12 @@
 
 {% if is_owner %}
 <div class="form-card">
-    <h2 style="margin-top:0;">Add someone</h2>
-    <form method="POST">
-        {{ form.csrf_token }}
-        <label class="field-label" for="{{ form.username.id }}">Username</label>
-        {{ form.username(id=form.username.id, placeholder="e.g. a teammate's name") }}
-        {% if form.username.errors %}<div class="field-errors">{{ form.username.errors[0] }}</div>{% endif %}
-        <label class="field-label" for="{{ form.password.id }}">Password</label>
-        {{ form.password(id=form.password.id, placeholder="set a password for them") }}
-        {% if form.password.errors %}<div class="field-errors">{{ form.password.errors[0] }}</div>{% endif %}
-        <button type="submit" class="btn-primary">Add user</button>
-    </form>
-    <div class="hint">Tell them the password yourself (in person, or a secure channel) — it isn't emailed.</div>
+    <h2 style="margin-top:0;">Invite someone</h2>
+    <p style="color:var(--muted); font-size:13px; margin:0 0 10px;">
+        New people create their own account by signing up with their own Gmail — share this link:
+    </p>
+    <input type="text" readonly value="{{ url_for('signup', _external=True) }}" onclick="this.select()"
+           style="width:100%; background:var(--shell); border:1px solid var(--card-border); border-radius:var(--radius-sm); padding:10px 12px; font-size:13px;">
 </div>
 
 <div class="panel">

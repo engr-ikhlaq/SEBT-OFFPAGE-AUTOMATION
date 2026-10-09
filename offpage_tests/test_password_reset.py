@@ -49,5 +49,27 @@ class PasswordResetTokenTests(unittest.TestCase):
         self.assertIsNone(db.get_valid_password_reset_token(expired))
 
 
+class FindUsernameByConnectedEmailTests(unittest.TestCase):
+    """Backs /signup's duplicate check — the same Gmail must not end up
+    connected to two different app accounts, even when the existing
+    account's username isn't that email (an older, manually-created one)."""
+
+    def setUp(self):
+        db.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "tracking.db"
+        db.init_db()
+        db.create_user("ikhlaq-wahid", "hash", role="owner", created_by="setup")
+
+    def test_finds_the_owner_of_a_manually_connected_email(self):
+        db.save_manual_email_account("ikhlaq-wahid", "mairablogwrites@gmail.com", "app-pass")
+        self.assertEqual(db.find_username_by_connected_email("mairablogwrites@gmail.com"), "ikhlaq-wahid")
+
+    def test_finds_the_owner_of_an_oauth_connected_email(self):
+        db.save_google_account("ikhlaq-wahid", "ikhlaq@gmail.com", "refresh", "access", "sheet-1")
+        self.assertEqual(db.find_username_by_connected_email("ikhlaq@gmail.com"), "ikhlaq-wahid")
+
+    def test_an_unclaimed_email_returns_none(self):
+        self.assertIsNone(db.find_username_by_connected_email("nobody@gmail.com"))
+
+
 if __name__ == "__main__":
     unittest.main()

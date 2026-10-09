@@ -1,0 +1,103 @@
+"""app.py's /signup route - self-service account creation: a Gmail
+address + App Password is verified live, then becomes BOTH the account's
+sending identity (manual_email_account) and its login password, in one
+step. _verify_gmail_app_password is mocked so this never opens a real
+SMTP connection.
+
+db.DB_PATH is pointed at a throwaway file BEFORE app.py is ever imported,
+and again in setUp() for every test - see test_forgot_password_route.py's
+module docstring for why both matter."""
+from __future__ import annotations
+
+import pathlib
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+import db
+
+db.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "tracking.db"
+db.init_db()
+import app as app_module
+
+app_module.app.config["WTF_CSRF_ENABLED"] = False
+
+
+class SignupRouteTests(unittest.TestCase):
+    def setUp(self):
+        db.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "tracking.db"
+        db.init_db()
+        db.create_user("existing", "hash", role="member", created_by="owner")
+        db.save_manual_email_account("existing", "existing@gmail.com", "old-pass")
+
+    def test_valid_credentials_create_an_account_and_log_the_user_in(self):
+        client = app_module.app.test_client()
+        with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
+            resp = client.post(
+                "/signup",
+                data={"email": "NewPerson@Gmail.com", "app_password": "abcd efgh ijkl mnop"},
+                follow_redirects=False,
+            )
+
+        verify.assert_called_once_with("newperson@gmail.com", "abcd efgh ijkl mnop")
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.headers["Location"], "/")
+
+        user = db.get_user_by_username("newperson@gmail.com")
+        self.assertIsNotNone(user)
+        self.assertEqual(user["role"], "member")
+
+        manual = db.get_manual_email_account("newperson@gmail.com")
+        self.assertEqual(manual["email"], "newperson@gmail.com")
+        self.assertEqual(manual["app_password"], "abcd efgh ijkl mnop")
+
+    def test_the_app_password_doubles_as_the_login_password(self):
+        client = app_module.app.test_client()
+        with mock.patch.object(app_module, "_verify_gmail_app_password"):
+            client.post("/signup", data={"email": "newperson@gmail.com", "app_password": "my-app-password"})
+
+        login_resp = client.post(
+            "/login", data={"username": "newperson@gmail.com", "password": "my-app-password"},
+            follow_redirects=False,
+        )
+        self.assertEqual(login_resp.status_code, 302)
+        self.assertEqual(login_resp.headers["Location"], "/")  # straight to Compose, no onboarding needed
+
+    def test_credentials_that_fail_live_verification_create_no_account(self):
+        client = app_module.app.test_client()
+        with mock.patch.object(app_module, "_verify_gmail_app_password", side_effect=Exception("bad credentials")):
+            resp = client.post("/signup", data={"email": "nope@gmail.com", "app_password": "wrong"})
+
+        self.assertEqual(resp.status_code, 200)  # re-rendered with an error
+        self.assertIsNone(db.get_user_by_username("nope@gmail.com"))
+
+    def test_an_already_registered_email_is_sent_to_login_instead(self):
+        client = app_module.app.test_client()
+        with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
+            resp = client.post(
+                "/signup", data={"email": "existing@gmail.com", "app_password": "whatever"},
+                follow_redirects=False,
+            )
+
+        verify.assert_not_called()  # never even attempted - no credentials leaked to a duplicate check
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/login", resp.headers["Location"])
+        # The ORIGINAL account must be untouched by the duplicate attempt.
+        self.assertEqual(db.get_manual_email_account("existing")["app_password"], "old-pass")
+
+    def test_an_already_logged_in_user_is_redirected_away_from_signup(self):
+        client = app_module.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = 1
+            sess["username"] = "existing"
+            sess["role"] = "member"
+
+        resp = client.get("/signup", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.headers["Location"], "/")
+
+
+if __name__ == "__main__":
+    unittest.main()

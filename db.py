@@ -617,6 +617,21 @@ def delete_manual_email_account(username: str) -> None:
         conn.execute("DELETE FROM manual_email_accounts WHERE username=?", (username,))
 
 
+def find_username_by_connected_email(email: str) -> str | None:
+    """Whichever existing user already has this Gmail connected (OAuth or
+    manual), regardless of their own username — used by signup() so the
+    same mailbox can't be claimed by a second app account (an older
+    account's username isn't necessarily its email, e.g. one the owner
+    set up by hand before self-signup existed)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT username FROM google_accounts WHERE google_email=? "
+            "UNION SELECT username FROM manual_email_accounts WHERE email=? LIMIT 1",
+            (email, email),
+        ).fetchone()
+        return row["username"] if row else None
+
+
 # ---------------------------------------------------------------------------
 # Per-user "clear leads" watermark - hides rows from the dashboard view
 # without ever touching the Sheet/local file itself (see schema comment above).
