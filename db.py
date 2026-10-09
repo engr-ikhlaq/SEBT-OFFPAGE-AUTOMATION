@@ -451,6 +451,31 @@ def get_lead_journeys(limit: int = 100):
         return [dict(r) for r in rows]
 
 
+def delete_lead_journey(recipient_id: int) -> bool:
+    """Removes one outreach lead from the dashboard's journey list: the
+    recipient row, its open/click events, and - since auto_outreach.py
+    creates a fresh campaign for each lead it sends to - that campaign
+    too, if this was its only recipient. This only ever touches this
+    app's own tracking.db; it has no effect on the Sheet/local lead data
+    itself (see data_source.py), which is a separate store entirely.
+    Returns False if no such outreach recipient exists."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT campaign_id FROM recipients WHERE id=? AND kind='outreach'", (recipient_id,)
+        ).fetchone()
+        if not row:
+            return False
+        campaign_id = row["campaign_id"]
+        conn.execute("DELETE FROM events WHERE recipient_id=?", (recipient_id,))
+        conn.execute("DELETE FROM recipients WHERE id=?", (recipient_id,))
+        remaining = conn.execute(
+            "SELECT COUNT(*) c FROM recipients WHERE campaign_id=?", (campaign_id,)
+        ).fetchone()["c"]
+        if remaining == 0:
+            conn.execute("DELETE FROM campaigns WHERE id=?", (campaign_id,))
+        return True
+
+
 def get_unseen_reply_count() -> int:
     with get_conn() as conn:
         row = conn.execute(

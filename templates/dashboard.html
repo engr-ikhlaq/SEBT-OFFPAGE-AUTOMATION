@@ -213,6 +213,12 @@
                             <span class="journey-step failed">Unsubscribed</span>
                             {% endif %}
                         </div>
+                        <form method="POST" action="{{ url_for('delete_lead_journey', recipient_id=lead.id) }}"
+                              onsubmit="return confirm('Remove {{ lead.email }} from this list? This only removes it from the dashboard, not any lead data.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" title="Remove from this list"
+                                    style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px; padding:4px 6px; line-height:1;">&#10005;</button>
+                        </form>
                     </div>
                     {% else %}
                     <div class="empty">No outreach sent yet. Once the sheet has confirmed leads, use "Send to new leads" above.</div>

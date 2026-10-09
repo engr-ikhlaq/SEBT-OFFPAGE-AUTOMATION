@@ -956,6 +956,20 @@ def mark_replies_seen():
     return redirect(url_for("dashboard"))
 
 
+@app.route("/dashboard/journey/<int:recipient_id>/delete", methods=["POST"])
+def delete_lead_journey(recipient_id):
+    """Removes one row from the "Guest-post outreach" list — this app's
+    own send/open/click/reply tracking, not the scraped-lead data itself
+    (see /leads/clear for that)."""
+    if not require_login():
+        return redirect(url_for("login"))
+    if db.delete_lead_journey(recipient_id):
+        flash("Removed from the outreach list.")
+    else:
+        flash("Could not find that lead.")
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/outreach/run", methods=["POST"])
 def run_outreach():
     if not require_login():
