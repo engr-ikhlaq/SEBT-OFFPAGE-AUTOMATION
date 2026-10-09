@@ -57,6 +57,13 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
+# Chrome always runs on THIS machine (wherever app.py is running) - a web
+# request can't open a window on the browser making it, no matter who's
+# logged in or where they're connecting from. Headless means no window
+# pops up for anyone, which is what every real deployment wants anyway;
+# set SCRAPE_HEADLESS=false in .env to watch it locally while debugging.
+_HEADLESS = os.environ.get("SCRAPE_HEADLESS", "true").strip().lower() not in ("false", "0", "no")
+
 
 @dataclasses.dataclass
 class ScrapeStatus:
@@ -174,7 +181,7 @@ def _run_batch(keyword: str, username: str, is_owner: bool) -> None:
     writer: LeadWriter | None = None
 
     try:
-        with SeenStore(settings.seen_db_path) as store, BrowserSession() as session:
+        with SeenStore(settings.seen_db_path) as store, BrowserSession(headless=_HEADLESS) as session:
             sink = backend.make_sink()
             sink.ensure_headers()
             writer = LeadWriter(sink, store, settings.batch_size)
