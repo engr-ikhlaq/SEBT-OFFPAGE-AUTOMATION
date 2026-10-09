@@ -8,14 +8,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body class="dashboard-bg">
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_eye, icon_message, icon_alert, icon_trash, icon_check, icon_x, icon_bell %}
 <div class="shell">
 
     <div class="sidebar">
         <div class="logo">M</div>
-        <a class="active" href="{{ url_for('dashboard') }}" title="Dashboard">&#8962;</a>
-        <a href="{{ url_for('index') }}" title="Compose">&#9998;</a>
-        {% if is_owner %}<a href="{{ url_for('users') }}" title="Manage access">&#128101;</a>{% endif %}
-        <a href="{{ url_for('logout') }}" title="Log out">&#9211;</a>
+        <a class="active" href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
+        <a href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
+        {% if is_owner %}<a href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>{% endif %}
+        <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
     </div>
 
     <div class="main">
@@ -30,7 +31,7 @@
                     {% if unseen_replies %}
                     <form method="POST" action="{{ url_for('mark_replies_seen') }}" style="display:inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit">🔔 {{ unseen_replies }} new</button>
+                        <button type="submit">{{ icon_bell(14) }} {{ unseen_replies }} new</button>
                     </form>
                     {% endif %}
                 </div>
@@ -56,8 +57,8 @@
 
         <!-- greeting: plain text above the photo, not overlaid on it -->
         <div class="greeting-block">
-            <div class="hi">Hey {{ session.username.split('-')[0]|capitalize }}, here's how outreach is going 👋</div>
-            <div class="ask">&#128269; {{ overview.total_sent or 0 }} sent &middot; {{ overview.total_replies or 0 }} replies &middot; {{ lead_journeys|length }} leads tracked</div>
+            <div class="hi">Hey {{ session.username.split('-')[0]|capitalize }}, here's how outreach is going</div>
+            <div class="ask">{{ icon_search(15) }} {{ overview.total_sent or 0 }} sent &middot; {{ overview.total_replies or 0 }} replies &middot; {{ lead_journeys|length }} leads tracked</div>
         </div>
 
         <!-- action toolbar: just the pills, floating directly on the page
@@ -65,15 +66,15 @@
         <div class="hero-pills">
             <form method="POST" action="{{ url_for('check_replies') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">🔍 Check replies</button>
+                <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">{{ icon_search(14) }} Check replies</button>
             </form>
             <form method="POST" action="{{ url_for('run_followups') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">⏰ Follow-ups</button>
+                <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">{{ icon_clock(14) }} Follow-ups</button>
             </form>
             <form method="POST" action="{{ url_for('run_outreach') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;">&#9993; Send to new leads</button>
+                <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;">{{ icon_mail(14) }} Send to new leads</button>
             </form>
         </div>
 
@@ -82,7 +83,7 @@
         <div class="widget-section">
             <div class="widget">
                 <div class="w-head">
-                    <div class="w-title"><span class="w-icon">&#9993;</span> Sent</div>
+                    <div class="w-title"><span class="w-icon">{{ icon_mail(15) }}</span> Sent</div>
                     <div class="w-period">7 days</div>
                 </div>
                 <div class="w-value">{{ overview.total_sent or 0 }}</div>
@@ -93,7 +94,7 @@
             </div>
             <div class="widget">
                 <div class="w-head">
-                    <div class="w-title"><span class="w-icon">&#128065;</span> Opens</div>
+                    <div class="w-title"><span class="w-icon">{{ icon_eye(15) }}</span> Opens</div>
                     <div class="w-period">7 days</div>
                 </div>
                 <div class="w-value">{{ overview.unique_opens or 0 }}</div>
@@ -104,7 +105,7 @@
             </div>
             <div class="widget">
                 <div class="w-head">
-                    <div class="w-title"><span class="w-icon">&#128172;</span> Replies</div>
+                    <div class="w-title"><span class="w-icon">{{ icon_message(15) }}</span> Replies</div>
                     <div class="w-period">All time</div>
                 </div>
                 <div class="w-value">{{ overview.total_replies or 0 }}</div>
@@ -113,7 +114,7 @@
 
             <!-- tall gauge card, spans both rows -->
             <div class="widget widget-gauge">
-                <div class="gauge-icons">&#9993; &#128065; &#128172; &#8987;</div>
+                <div class="gauge-icons">{{ icon_mail(14) }} {{ icon_eye(14) }} {{ icon_message(14) }} {{ icon_clock(14) }}</div>
                 <div class="gauge-wrap">
                     <svg width="130" height="75" viewBox="0 0 120 70">
                         <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="9" stroke-linecap="round"/>
@@ -152,12 +153,12 @@
         <div class="widget-section" style="grid-template-columns: repeat(4, 1fr); grid-template-rows: auto;">
             <div class="widget">
                 <div class="w-head">
-                    <div class="w-title"><span class="w-icon">&#128269;</span> Leads scraped</div>
+                    <div class="w-title"><span class="w-icon">{{ icon_search(15) }}</span> Leads scraped</div>
                     {% if lead_counts and lead_counts.total %}
                     <form method="POST" action="{{ url_for('clear_leads') }}"
                           onsubmit="return confirm('Clear {{ lead_counts.total }} lead(s) from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" title="Clear from dashboard view only — does not delete from {{ data_backend_name }}" style="font-size:11px; padding:4px 10px; color:var(--accent-2);">&#128465; Clear</button>
+                        <button type="submit" title="Clear from dashboard view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:4px; font-size:11px; padding:4px 10px; color:var(--accent-2);">{{ icon_trash(12) }} Clear</button>
                     </form>
                     {% endif %}
                 </div>
@@ -165,17 +166,17 @@
                 <div class="w-sub">in {{ data_backend_name }}</div>
             </div>
             <div class="widget">
-                <div class="w-head"><div class="w-title"><span class="w-icon">&#9203;</span> Awaiting outreach</div></div>
+                <div class="w-head"><div class="w-title"><span class="w-icon">{{ icon_clock(15) }}</span> Awaiting outreach</div></div>
                 <div class="w-value accent">{{ lead_counts.pending if lead_counts is not none else '—' }}</div>
                 <div class="w-sub">not yet emailed</div>
             </div>
             <div class="widget">
-                <div class="w-head"><div class="w-title"><span class="w-icon">&#9993;</span> Emailed</div></div>
+                <div class="w-head"><div class="w-title"><span class="w-icon">{{ icon_mail(15) }}</span> Emailed</div></div>
                 <div class="w-value">{{ lead_counts.sent if lead_counts is not none else '—' }}</div>
                 <div class="w-sub">outreach sent</div>
             </div>
             <div class="widget">
-                <div class="w-head"><div class="w-title"><span class="w-icon">&#9888;</span> Send failed</div></div>
+                <div class="w-head"><div class="w-title"><span class="w-icon">{{ icon_alert(15) }}</span> Send failed</div></div>
                 <div class="w-value">{{ lead_counts.failed if lead_counts is not none else '—' }}</div>
                 <div class="w-sub">needs a look</div>
             </div>
@@ -198,15 +199,15 @@
                         </div>
                         <div class="journey-steps">
                             <span class="journey-step {{ 'done' if lead.status == 'sent' else 'failed' if lead.status == 'failed' else '' }}">
-                                {{ '✓' if lead.status == 'sent' else '✕' if lead.status == 'failed' else '…' }} Emailed
+                                {{ icon_check(11) if lead.status == 'sent' else icon_x(11) if lead.status == 'failed' else '' }} Emailed
                             </span>
                             <span class="journey-arrow">&rarr;</span>
-                            <span class="journey-step {{ 'done' if lead.open_count }}">{{ '✓' if lead.open_count else '' }} Opened{% if lead.open_count %} ({{ lead.open_count }}){% endif %}</span>
+                            <span class="journey-step {{ 'done' if lead.open_count }}">{{ icon_check(11) if lead.open_count else '' }} Opened{% if lead.open_count %} ({{ lead.open_count }}){% endif %}</span>
                             <span class="journey-arrow">&rarr;</span>
-                            <span class="journey-step {{ 'done' if lead.click_count }}">{{ '✓' if lead.click_count else '' }} Clicked</span>
+                            <span class="journey-step {{ 'done' if lead.click_count }}">{{ icon_check(11) if lead.click_count else '' }} Clicked</span>
                             <span class="journey-arrow">&rarr;</span>
                             <span class="journey-step {{ 'done' if lead.replied_at else '' }}">
-                                {{ '✓' if lead.replied_at else '' }} {{ 'Replied' if lead.replied_at else ('Followed up' if lead.followed_up_at else 'Awaiting reply') }}
+                                {{ icon_check(11) if lead.replied_at else '' }} {{ 'Replied' if lead.replied_at else ('Followed up' if lead.followed_up_at else 'Awaiting reply') }}
                             </span>
                             {% if lead.unsubscribed_at %}
                             <span class="journey-arrow">&rarr;</span>
@@ -217,7 +218,7 @@
                               onsubmit="return confirm('Remove {{ lead.email }} from this list? This only removes it from the dashboard, not any lead data.');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" title="Remove from this list"
-                                    style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px; padding:4px 6px; line-height:1;">&#10005;</button>
+                                    style="background:none; border:none; color:var(--muted); cursor:pointer; padding:4px 6px; line-height:1;">{{ icon_x(14) }}</button>
                         </form>
                     </div>
                     {% else %}

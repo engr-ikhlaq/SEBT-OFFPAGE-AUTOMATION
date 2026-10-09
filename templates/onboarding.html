@@ -24,6 +24,7 @@
     </style>
 </head>
 <body>
+{% from "_icons.html" import icon_link %}
 <div class="onboard-shell">
     <div class="brand" style="margin-bottom:8px;">
         <div class="logo"></div> Guest Posting Automation
@@ -45,8 +46,8 @@
 
             {% if google_oauth_configured %}
             <div style="margin-top:14px;">
-                <a href="{{ url_for('connect_google') }}" class="btn-primary" style="width:auto; padding:11px 22px; text-decoration:none; display:inline-block;">
-                    &#128279; One-click: Connect Google Account
+                <a href="{{ url_for('connect_google') }}" class="btn-primary" style="width:auto; padding:11px 22px; text-decoration:none; display:inline-flex; align-items:center; gap:7px;">
+                    {{ icon_link(15) }} One-click: Connect Google Account
                 </a>
             </div>
             <div class="onboard-or">or connect manually</div>

@@ -7,14 +7,15 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body class="dashboard-bg">
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_check, icon_trash, icon_link, icon_check_circle %}
 <div class="shell">
 
     <div class="sidebar">
         <div class="logo">M</div>
-        <a href="{{ url_for('dashboard') }}" title="Dashboard">&#8962;</a>
-        <a class="active" href="{{ url_for('index') }}" title="Compose">&#9998;</a>
-        {% if is_owner %}<a href="{{ url_for('users') }}" title="Manage access">&#128101;</a>{% endif %}
-        <a href="{{ url_for('logout') }}" title="Log out">&#9211;</a>
+        <a href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
+        <a class="active" href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
+        {% if is_owner %}<a href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>{% endif %}
+        <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
     </div>
 
     <div class="main">
@@ -50,7 +51,7 @@
             {% if google_account %}
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
                 <div style="display:flex; align-items:center; gap:12px;">
-                    <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#6366f1,var(--accent)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; flex-shrink:0;">&#10003;</div>
+                    <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#6366f1,var(--accent)); display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0;">{{ icon_check(18) }}</div>
                     <div>
                         <div style="font-weight:700;">Connected (Google sign-in): {{ google_account.google_email }}</div>
                         <div class="hint" style="margin:2px 0 0;">Sends go from this Gmail — no app password needed. It has its own lead sheet, created automatically.</div>
@@ -64,7 +65,7 @@
             {% elif manual_account %}
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
                 <div style="display:flex; align-items:center; gap:12px;">
-                    <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#6366f1,var(--accent)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; flex-shrink:0;">&#10003;</div>
+                    <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#6366f1,var(--accent)); display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0;">{{ icon_check(18) }}</div>
                     <div>
                         <div style="font-weight:700;">Connected (App Password): {{ manual_account.email }}</div>
                         <div class="hint" style="margin:2px 0 0;">Sends go through this Gmail's SMTP using the App Password you provided.</div>
@@ -82,7 +83,7 @@
                 {% if google_oauth_configured %}
                 <div>
                     <div style="font-weight:700; font-size:13px; margin-bottom:8px;">One click</div>
-                    <a href="{{ url_for('connect_google') }}" class="btn-primary" style="width:auto; padding:11px 22px; text-decoration:none; display:inline-block;">&#128279; Connect Google Account</a>
+                    <a href="{{ url_for('connect_google') }}" class="btn-primary" style="width:auto; padding:11px 22px; text-decoration:none; display:inline-flex; align-items:center; gap:7px;">{{ icon_link(15) }} Connect Google Account</a>
                 </div>
                 {% endif %}
                 <div>
@@ -115,14 +116,14 @@
             <div id="scrape-idle-form">
                 <label class="field-label" for="scrape-keyword">Target keyword</label>
                 <input type="text" id="scrape-keyword" placeholder="e.g. peptides, weight loss, SaaS analytics">
-                <button type="button" class="btn-primary" id="scrape-start-btn" style="width:auto; padding:12px 24px;">
-                    &#128269; Start scraping
+                <button type="button" class="btn-primary" id="scrape-start-btn" style="width:auto; padding:12px 24px; display:inline-flex; align-items:center; gap:8px;">
+                    {{ icon_search(15) }} Start scraping
                 </button>
             </div>
 
             <div id="scrape-running" style="display:none;">
                 <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px;">
-                    <div class="w-icon" style="font-size:20px;">&#128269;</div>
+                    <div class="w-icon">{{ icon_search(20) }}</div>
                     <div>
                         <div style="font-weight:700;">Scraping for "<span id="scrape-keyword-label"></span>"</div>
                         <div class="hint" style="margin:2px 0 0;"><span id="scrape-count">0</span> of 100 found this batch &middot; last: <span id="scrape-last-domain">—</span></div>
@@ -141,7 +142,7 @@
                 <form method="POST" action="{{ url_for('clear_leads') }}"
                       onsubmit="return confirm('Clear these leads from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" title="Clear from this view only — does not delete from {{ data_backend_name }}" style="font-size:12px; padding:6px 12px; color:var(--accent-2);">&#128465; Clear leads</button>
+                    <button type="submit" title="Clear from this view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:5px; font-size:12px; padding:6px 12px; color:var(--accent-2);">{{ icon_trash(13) }} Clear leads</button>
                 </form>
                 {% endif %}
             </div>
@@ -212,12 +213,12 @@
 <!-- =============== Decision popup, same design as the dashboard =============== -->
 <div class="modal-overlay" id="scrape-modal" style="display:none;">
     <div class="modal-card">
-        <h3>100 leads found 🎉</h3>
+        <h3 style="display:flex; align-items:center; gap:9px;">{{ icon_check_circle(20) }} Leads found</h3>
         <p>Scraping for "<span id="modal-keyword"></span>" just reached <span id="modal-total">100</span> confirmed leads.
            Keep looking for more, or start emailing the ones found so far?</p>
         <div class="modal-actions">
-            <button type="button" class="modal-btn-primary" id="modal-send-btn">&#9993; Send to these leads now</button>
-            <button type="button" class="modal-btn-secondary" id="modal-continue-btn">&#128269; Keep scraping</button>
+            <button type="button" class="modal-btn-primary" id="modal-send-btn" style="display:inline-flex; align-items:center; gap:7px;">{{ icon_mail(14) }} Send to these leads now</button>
+            <button type="button" class="modal-btn-secondary" id="modal-continue-btn" style="display:inline-flex; align-items:center; gap:7px;">{{ icon_search(14) }} Keep scraping</button>
             <button type="button" class="modal-btn-ghost" id="modal-dismiss-btn">Decide later</button>
         </div>
     </div>
