@@ -44,6 +44,36 @@
         </div>
         {% endif %}
 
+        <!-- =============== Connect Google Account =============== -->
+        <div class="panel">
+            <h2>Your Google account</h2>
+            {% if google_account %}
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div style="width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#6366f1,var(--accent)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; flex-shrink:0;">&#10003;</div>
+                    <div>
+                        <div style="font-weight:700;">Connected: {{ google_account.google_email }}</div>
+                        <div class="hint" style="margin:2px 0 0;">Sends go from this Gmail — no app password needed. It has its own lead sheet, created automatically.</div>
+                    </div>
+                </div>
+                <form method="POST" action="{{ url_for('connect_google_disconnect') }}" onsubmit="return confirm('Disconnect {{ google_account.google_email }}? Sending will fall back to the shared setup.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit">Disconnect</button>
+                </form>
+            </div>
+            {% elif google_oauth_configured %}
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                <div class="hint" style="margin:0;">Not connected — campaigns you send use the shared SMTP account instead.</div>
+                <a href="{{ url_for('connect_google') }}" class="btn-primary" style="width:auto; padding:11px 22px; text-decoration:none; display:inline-block;">&#128279; Connect Google Account</a>
+            </div>
+            {% else %}
+            <div class="hint" style="margin:0;">
+                Google sign-in isn't set up for this app yet — it needs a one-time OAuth Client ID from Google Cloud
+                Console (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET in .env). Ask whoever runs this app.
+            </div>
+            {% endif %}
+        </div>
+
         <!-- =============== Lead scraping =============== -->
         <div class="panel">
             <h2>Find guest-post leads</h2>

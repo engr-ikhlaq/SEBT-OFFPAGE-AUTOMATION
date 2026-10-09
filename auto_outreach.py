@@ -29,7 +29,7 @@ import logging
 
 import db
 import sheets_source
-from mailer import MailerConfig, personalize, send_batch
+from mailer import MailerConfig, SmtpSender, personalize, send_batch
 
 log = logging.getLogger("auto_outreach")
 
@@ -154,6 +154,7 @@ def send_pending_leads(base_url: str, limit: int | None = None) -> dict:
         try:
             result = send_batch(
                 cfg,
+                SmtpSender(cfg),
                 recipients=[email],
                 subject=OUTREACH_SUBJECT,
                 html_template=html_template,
@@ -217,6 +218,7 @@ def send_due_followups(base_url: str, hours: int = FOLLOW_UP_AFTER_HOURS) -> dic
         try:
             result = send_batch(
                 cfg,
+                SmtpSender(cfg),
                 recipients=[email],
                 subject=FOLLOWUP_SUBJECT,
                 html_template=html_template,

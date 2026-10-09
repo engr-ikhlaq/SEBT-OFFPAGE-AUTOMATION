@@ -66,6 +66,24 @@ CREATE TABLE IF NOT EXISTS users (
     created_by    TEXT
 );
 
+-- One connected Google account per app user (see google_oauth.py). No hard
+-- foreign key to users(username) on purpose - delete_user() removes the
+-- matching row itself (see below), and a loose reference here means that
+-- stays a simple two-statement delete instead of needing ON DELETE CASCADE
+-- or risking an IntegrityError if the cleanup is ever missed.
+-- The refresh token is the sensitive part - it doesn't expire until the
+-- user revokes access at myaccount.google.com/permissions, so this file is
+-- effectively as sensitive as a password and must stay out of git (see
+-- .gitignore: tracking.db already is).
+CREATE TABLE IF NOT EXISTS google_accounts (
+    username        TEXT PRIMARY KEY,
+    google_email    TEXT NOT NULL,
+    refresh_token   TEXT NOT NULL,
+    access_token    TEXT,
+    sheet_id        TEXT,
+    connected_at    TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_recipients_campaign ON recipients(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_recipients_token ON recipients(token);
 CREATE INDEX IF NOT EXISTS idx_events_recipient ON events(recipient_id);
@@ -446,5 +464,44 @@ def delete_user(user_id: int) -> bool:
         total = conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
         if total <= 1:
             return False
+        row = conn.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        if row:
+            conn.execute("DELETE FROM google_accounts WHERE username=?", (row["username"],))
         return True
+
+
+# ---------------------------------------------------------------------------
+# Connected Google accounts (one per app user — see google_oauth.py)
+# ---------------------------------------------------------------------------
+
+def save_google_account(username: str, google_email: str, refresh_token: str,
+                         access_token: str, sheet_id: str | None) -> None:
+    """Upsert: connecting again (e.g. after revoking) just replaces the row."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO google_accounts (username, google_email, refresh_token, access_token, sheet_id, connected_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(username) DO UPDATE SET "
+            "  google_email=excluded.google_email, refresh_token=excluded.refresh_token, "
+            "  access_token=excluded.access_token, sheet_id=excluded.sheet_id, connected_at=excluded.connected_at",
+            (username, google_email, refresh_token, access_token, sheet_id, now_iso()),
+        )
+
+
+def get_google_account(username: str):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM google_accounts WHERE username=?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_google_access_token(username: str, access_token: str) -> None:
+    """Called after a refresh, so the next send can reuse the fresh token
+    instead of refreshing again immediately."""
+    with get_conn() as conn:
+        conn.execute("UPDATE google_accounts SET access_token=? WHERE username=?", (access_token, username))
+
+
+def delete_google_account(username: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM google_accounts WHERE username=?", (username,))

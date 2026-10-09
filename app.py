@@ -44,14 +44,22 @@ from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import auto_outreach
+import google_oauth
 import scrape_job
-from mailer import MailerConfig, send_batch
+from mailer import GmailApiSender, MailerConfig, SmtpSender, send_batch
 from tracking import tracking_bp
 import db
 import sheets_source
 
 load_dotenv()
 log = logging.getLogger("app")
+
+# google-auth-oauthlib refuses to run the OAuth flow over plain http, since a
+# real deployment must use https. Localhost testing is the documented
+# exception — this is never set when PUBLIC_BASE_URL points at a real https
+# domain, so production deployments still get the normal protection.
+if not os.environ.get("PUBLIC_BASE_URL", "").startswith("https://"):
+    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-key-change-me")
@@ -96,6 +104,37 @@ def save_suppression_list(emails: set):
 
 def get_mailer_config() -> MailerConfig:
     return MailerConfig.from_env()
+
+
+def sender_for_current_user() -> tuple[MailerConfig, object]:
+    """(cfg, sender) for whoever is logged in: their connected Google
+    account (Gmail API, no app password) if they have one, otherwise the
+    shared SMTP_* config from .env — same as before OAuth existed."""
+    account = db.get_google_account(session.get("username", ""))
+    if account:
+        creds = google_oauth.credentials_from_row(account)
+        if creds.token != account["access_token"]:
+            db.update_google_access_token(session["username"], creds.token)
+        cfg = MailerConfig(
+            host="", port=0, username=account["google_email"], password="",
+            from_name=os.environ.get("FROM_NAME", account["google_email"]),
+            from_email=account["google_email"],
+            reply_to=account["google_email"],
+            send_delay_seconds=os.environ.get("SEND_DELAY_SECONDS", 3),
+            max_emails_per_run=os.environ.get("MAX_EMAILS_PER_RUN", 150),
+        )
+        return cfg, GmailApiSender(creds)
+    cfg = get_mailer_config()
+    return cfg, SmtpSender(cfg)
+
+
+def _google_account_context() -> dict:
+    """Shared by every index.html render call, so the connect-status panel
+    (and the fallback-to-SMTP note) always reflects the same lookup."""
+    return {
+        "google_account": db.get_google_account(session.get("username", "")),
+        "google_oauth_configured": google_oauth.is_configured(),
+    }
 
 
 def _any_imap_configured() -> bool:
@@ -237,6 +276,70 @@ def delete_user(user_id):
     return redirect(url_for("users"))
 
 
+# ---------------------------------------------------------------------------
+# Connect Google Account — one-click OAuth: send from your own Gmail (no
+# app password), and a Sheet of your own (no manual service-account
+# sharing). See google_oauth.py for how this actually works.
+# ---------------------------------------------------------------------------
+
+@app.route("/connect/google")
+def connect_google():
+    if not require_login():
+        return redirect(url_for("login"))
+    if not google_oauth.is_configured():
+        flash("Google sign-in isn't set up yet — ask whoever runs this app to add "
+              "GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET to .env.")
+        return redirect(url_for("index"))
+
+    redirect_uri = url_for("connect_google_callback", _external=True)
+    url, state = google_oauth.authorization_url(redirect_uri)
+    session["google_oauth_state"] = state
+    return redirect(url)
+
+
+@app.route("/connect/google/callback")
+def connect_google_callback():
+    if not require_login():
+        return redirect(url_for("login"))
+
+    expected_state = session.pop("google_oauth_state", None)
+    if not expected_state or request.args.get("state") != expected_state:
+        flash("That Google sign-in link expired or was tampered with — try connecting again.")
+        return redirect(url_for("index"))
+    if request.args.get("error"):
+        flash(f"Google sign-in was cancelled ({request.args['error']}).")
+        return redirect(url_for("index"))
+
+    try:
+        redirect_uri = url_for("connect_google_callback", _external=True)
+        credentials = google_oauth.exchange_code(redirect_uri, request.url)
+        email = google_oauth.get_connected_email(credentials)
+        sheet_id = google_oauth.get_or_create_sheet(credentials)
+    except Exception:
+        log.exception("Google connect failed")
+        flash("Could not finish connecting your Google account. Please try again.")
+        return redirect(url_for("index"))
+
+    db.save_google_account(
+        username=session["username"],
+        google_email=email,
+        refresh_token=credentials.refresh_token,
+        access_token=credentials.token,
+        sheet_id=sheet_id,
+    )
+    flash(f"Connected {email} — you can now send from it, and it has its own lead sheet.")
+    return redirect(url_for("index"))
+
+
+@app.route("/connect/google/disconnect", methods=["POST"])
+def connect_google_disconnect():
+    if not require_login():
+        return redirect(url_for("login"))
+    db.delete_google_account(session["username"])
+    flash("Disconnected your Google account. Sending falls back to the shared SMTP setup.")
+    return redirect(url_for("index"))
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if not require_login():
@@ -267,12 +370,12 @@ def index():
         if form.use_google_sheet.data:
             if not sheets_source.is_configured():
                 flash("Google Sheet isn't configured yet — set GOOGLE_SERVICE_ACCOUNT_FILE and GOOGLE_SHEET_ID in .env.")
-                return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status())
+                return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status(), **_google_account_context())
             try:
                 sheet_recipients = sheets_source.read_recipients(skip_already_sent=True)
             except Exception as e:
                 flash(f"Could not read Google Sheet: {e}")
-                return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status())
+                return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status(), **_google_account_context())
 
             for rec in sheet_recipients:
                 email = rec["Email"].strip()
@@ -281,7 +384,7 @@ def index():
 
         if not raw_lines:
             flash("Provide recipients by pasting them, uploading a file, or enabling the Google Sheet source.")
-            return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status())
+            return render_template("index.html", form=form, results=None, scrape_status=scrape_job.get_status(), **_google_account_context())
 
         candidates = {line.strip() for line in raw_lines if line.strip()}
 
@@ -328,9 +431,10 @@ def index():
         )
 
         try:
-            cfg = get_mailer_config()
+            cfg, sender = sender_for_current_user()
             results = send_batch(
                 cfg,
+                sender,
                 recipients=to_send,
                 subject=form.subject.data,
                 html_template=html_template,
@@ -377,7 +481,7 @@ def index():
         except Exception as e:
             flash(f"Send failed: {e}")
 
-    return render_template("index.html", form=form, results=results, scrape_status=scrape_job.get_status())
+    return render_template("index.html", form=form, results=results, scrape_status=scrape_job.get_status(), **_google_account_context())
 
 
 @app.route("/unsubscribe")

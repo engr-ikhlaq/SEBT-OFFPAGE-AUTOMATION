@@ -26,8 +26,16 @@ Tracking:
 - A Message-ID is generated for every outgoing message and returned in
   the results so it can be stored and later matched against IMAP replies
   (see reply_checker.py).
+
+Transport:
+- send_batch() takes a Sender — SmtpSender (the original SMTP+app-password
+  path) or GmailApiSender (a connected Google account's OAuth token, no
+  app password — see google_oauth.py). Everything else (throttling,
+  personalization, headers, tracking) is identical either way; only how
+  one message actually leaves the building differs.
 """
 
+import base64
 import os
 import smtplib
 import ssl
@@ -36,11 +44,72 @@ import logging
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
+import requests
+from google.auth.transport.requests import Request as GoogleAuthRequest
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger("mailer")
+
+
+class SmtpSender:
+    """The original transport: a throttled SMTP connection + app password."""
+
+    def __init__(self, cfg: "MailerConfig") -> None:
+        self._cfg = cfg
+        self._server: smtplib.SMTP | None = None
+
+    def __enter__(self) -> "SmtpSender":
+        self._server = smtplib.SMTP(self._cfg.host, self._cfg.port)
+        self._server.ehlo()
+        self._server.starttls(context=ssl.create_default_context())
+        self._server.ehlo()
+        self._server.login(self._cfg.username, self._cfg.password)
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        if self._server is not None:
+            try:
+                self._server.quit()
+            except smtplib.SMTPException:
+                pass
+            self._server = None
+
+    def send(self, msg: EmailMessage) -> None:
+        self._server.send_message(msg)
+
+
+class GmailApiSender:
+    """Sends through the Gmail API using a connected OAuth account instead
+    of SMTP — no app password, nothing to type in on the sender's behalf.
+    See google_oauth.py for how `credentials` gets obtained and refreshed.
+    """
+
+    SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+
+    def __init__(self, credentials, http_session: requests.Session | None = None) -> None:
+        self._creds = credentials
+        self._http = http_session or requests.Session()
+
+    def __enter__(self) -> "GmailApiSender":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        pass
+
+    def send(self, msg: EmailMessage) -> None:
+        if self._creds.expired and self._creds.refresh_token:
+            self._creds.refresh(GoogleAuthRequest())
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+        response = self._http.post(
+            self.SEND_URL,
+            headers={"Authorization": f"Bearer {self._creds.token}"},
+            json={"raw": raw},
+            timeout=15,
+        )
+        response.raise_for_status()
 
 
 class MailerConfig:
@@ -126,13 +195,17 @@ def build_message(cfg: MailerConfig, to_email: str, subject: str,
     return msg
 
 
-def send_batch(cfg: MailerConfig, recipients: list[str], subject: str,
+def send_batch(cfg: MailerConfig, sender, recipients: list[str], subject: str,
                html_template: str, text_template: str,
                unsubscribe_url_template: str, tokens: dict[str, str],
                extra_fields: dict[str, dict[str, str]] | None = None,
                in_reply_to: dict[str, str] | None = None,
                on_progress=None):
     """
+    cfg: identity + throttle settings (from/reply-to, delay, per-run cap) —
+        used regardless of transport.
+    sender: SmtpSender or GmailApiSender — the thing that actually delivers
+        each built message. A context manager with .send(msg).
     recipients: list of email addresses (already validated/deduped by caller)
     *_template: strings that may contain "{{email}}" and "{{token}}" as
         personalization tokens, plus any key from extra_fields
@@ -159,14 +232,8 @@ def send_batch(cfg: MailerConfig, recipients: list[str], subject: str,
         )
 
     results = {"sent": [], "failed": [], "message_ids": {}}
-    context = ssl.create_default_context()
 
-    with smtplib.SMTP(cfg.host, cfg.port) as server:
-        server.ehlo()
-        server.starttls(context=context)
-        server.ehlo()
-        server.login(cfg.username, cfg.password)
-
+    with sender:
         for i, to_email in enumerate(recipients, start=1):
             try:
                 token = tokens[to_email]
@@ -180,7 +247,7 @@ def send_batch(cfg: MailerConfig, recipients: list[str], subject: str,
                     unsubscribe_url=personalize(unsubscribe_url_template, fields),
                     in_reply_to=(in_reply_to or {}).get(to_email),
                 )
-                server.send_message(msg)
+                sender.send(msg)
                 results["sent"].append(to_email)
                 results["message_ids"][to_email] = msg["Message-ID"]
                 logger.info("Sent to %s (%d/%d)", to_email, i, len(recipients))

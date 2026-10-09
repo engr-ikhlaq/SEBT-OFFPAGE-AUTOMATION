@@ -30,6 +30,59 @@ python app.py
 
 Visit `http://localhost:5000`, log in with `ADMIN_PASSWORD`, and fill out the form.
 
+## Connect Google Account (recommended over the app-password setup above)
+
+Instead of generating a Gmail app password and pasting it into `.env`, any
+logged-in user can click **Connect Google Account** on the Compose page and
+sign in with their own Gmail through Google's own consent screen. No
+password ever passes through this app. They get:
+
+- **Sending as themselves** — through the Gmail API, not SMTP, so there's
+  no app password to generate or protect.
+- **Their own lead sheet** — created automatically on first connect, with
+  the right headers already in place, no manual service-account sharing.
+- **One click to disconnect** — and they can also revoke access directly
+  at https://myaccount.google.com/permissions any time.
+
+This needs a one-time setup that only you (whoever runs this app) can do,
+since it requires your own Google Cloud account:
+
+1. Go to https://console.cloud.google.com/ and pick (or create) a project.
+2. **APIs & Services → Library** — enable the **Gmail API**, **Google
+   Sheets API**, and **Google Drive API**.
+3. **APIs & Services → OAuth consent screen** — set it up as "External"
+   (unless everyone who'll use this has a Workspace account on the same
+   domain, in which case "Internal" is simpler). Add yourself and anyone
+   else who'll connect an account as a **test user** — this avoids needing
+   Google's full app-verification review, which is really only required
+   for a public-facing product.
+4. **APIs & Services → Credentials → Create Credentials → OAuth client
+   ID** — Application type **Web application**. Add this to **Authorized
+   redirect URIs**:
+   ```
+   http://localhost:5000/connect/google/callback
+   ```
+   (add your real domain's equivalent too, later, if you deploy this
+   somewhere other than your own machine).
+5. Copy the **Client ID** and **Client Secret** into `.env`:
+   ```
+   GOOGLE_OAUTH_CLIENT_ID=...
+   GOOGLE_OAUTH_CLIENT_SECRET=...
+   ```
+6. Restart the app. The Compose page now shows a **Connect Google
+   Account** button instead of the "not set up" message.
+
+Until a test-user Google account is verified, Google shows an "unverified
+app" warning on the consent screen — click **Advanced → Go to (app name)
+(unsafe)** to continue. This is expected for an app only you and people you
+add as test users will use; it goes away only through Google's formal
+verification process, which matters for a public product, not a personal
+or small-team tool like this one.
+
+The shared `SMTP_*` setup from the section above still works and is used
+as the fallback for anyone who hasn't connected their own account — nothing
+breaks if you skip this section entirely.
+
 ## Why this won't automatically land in spam (and what to still watch for)
 
 Nothing guarantees inbox placement — spam filtering is entirely up to Gmail/
@@ -96,13 +149,20 @@ domain before sending to anyone outside your own machine.
 
 ## Files
 
-- `app.py` — Flask routes: login, campaign form, dashboard, unsubscribe endpoint
-- `mailer.py` — SMTP sending logic, throttling, per-recipient personalization, tracking pixel/click-link injection
-- `db.py` — SQLite storage + aggregate queries for the dashboard
+- `app.py` — Flask routes: login, campaign form, dashboard, Google connect, scraping API, unsubscribe endpoint
+- `mailer.py` — sending logic (SmtpSender / GmailApiSender), throttling, personalization, tracking pixel/click-link injection
+- `google_oauth.py` — the "Connect Google Account" OAuth flow, Gmail-API sending, and each account's auto-created sheet
+- `db.py` — SQLite storage: campaigns/recipients/events, users, connected Google accounts, aggregate queries
 - `tracking.py` — open-pixel and click-redirect endpoints
-- `reply_checker.py` — optional IMAP-based reply detection
-- `templates/` — login page, campaign form, HTML email body, dashboard, campaign detail, unsubscribe page
-- `tracking.db` — auto-created SQLite file; all campaign/recipient/event tracking data
+- `reply_checker.py` — optional IMAP-based reply detection (main mailbox and/or a connected outreach mailbox)
+- `sheets_source.py` — reads/writes the shared Keywords sheet (recipients for a campaign, lead counts for the dashboard)
+- `auto_outreach.py` — the automated guest-post pitch + 24h follow-up, sourced from the Keywords sheet
+- `scrape_job.py` — runs the lead scraper (`offpage/`) in a background thread, driven from the Compose page
+- `offpage/` — the Google-search lead finder (keyword → relevance-checked, email-verified leads)
+- `templates/` — login, compose (campaign + scraping + Google connect), dashboard, users, campaign detail, unsubscribe page
+- `static/app.css` — the one shared stylesheet every page uses
+- `tracking.db` — auto-created SQLite file; all tracking/user/connected-account data
+- `seen_domains.db` — auto-created; scraper's dedup memory, so re-running a keyword doesn't repeat work
 - `suppression_list.json` — auto-created; permanent record of unsubscribes,
   always excluded from future sends even if re-added to a recipient list
 - `.env.example` — copy to `.env` and fill in real credentials (never commit `.env`)
