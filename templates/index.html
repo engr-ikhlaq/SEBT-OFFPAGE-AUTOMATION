@@ -249,6 +249,7 @@
 
   let pollTimer = null;
   let modalShownForBatch = false;  // don't re-pop the modal every poll tick
+  let terminalMessageShown = false;  // don't re-alert "stopped"/"error" every poll tick
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -292,6 +293,7 @@
       lastDomainEl.textContent = s.last_domain || '—';
       progressBar.style.width = Math.min(100, s.queued_this_batch) + '%';
       modalShownForBatch = false;
+      terminalMessageShown = false;
       startPolling();  // covers resuming a scrape that was already running on page load
     } else if (s.state === 'awaiting_decision') {
       setRunningView(false);
@@ -301,6 +303,22 @@
         modal.style.display = 'flex';
         modalShownForBatch = true;
       }
+    } else if (s.state === 'stopped') {
+      setRunningView(false);
+      if (!terminalMessageShown) {
+        terminalMessageShown = true;
+        alert(`Stopped. ${s.queued_total} lead(s) found this run are already saved to ${s.backend_name || 'your leads store'} — nothing is lost.`);
+        refreshLeadsTable();
+      }
+      stopPolling();
+    } else if (s.state === 'error') {
+      setRunningView(false);
+      if (!terminalMessageShown) {
+        terminalMessageShown = true;
+        alert(`Scraping stopped because of an error, but ${s.queued_total} lead(s) found before it happened are already saved to ${s.backend_name || 'your leads store'} — nothing found so far is lost.\n\nError: ${s.error || 'unknown error'}`);
+        refreshLeadsTable();
+      }
+      stopPolling();
     } else {
       setRunningView(false);
       if (s.state === 'finished' && !modalShownForBatch) {

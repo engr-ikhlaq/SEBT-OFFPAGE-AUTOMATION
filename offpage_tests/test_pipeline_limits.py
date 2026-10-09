@@ -58,6 +58,38 @@ class MaxLeadsTests(unittest.TestCase):
             queued = pipeline.run(should_stop=lambda: True)
         self.assertEqual(queued, 0)
 
+    def test_should_stop_also_halts_partway_through_one_querys_results(self):
+        # A single query can return several results - Stop must take effect
+        # between THOSE too, not just once the whole batch is processed
+        # (otherwise clicking Stop on a slow page could feel unresponsive).
+        settings = _settings(queries=('[KEYWORD] "q1"',))
+        by_query = {
+            'pept "q1"': [
+                SearchResult(url="https://a.test", domain="a.test", snippet=""),
+                SearchResult(url="https://b.test", domain="b.test", snippet=""),
+                SearchResult(url="https://c.test", domain="c.test", snippet=""),
+            ],
+        }
+        reader = FakeReader({
+            "a.test": _lead_page("pept"), "b.test": _lead_page("pept"), "c.test": _lead_page("pept"),
+        })
+        search = FakeSearch(by_query)
+
+        stop_after_first = {"count": 0}
+
+        def should_stop():
+            return stop_after_first["count"] >= 1
+
+        with SeenStore(":memory:") as store:
+            writer = LeadWriter(FakeSink(), store, batch_size=1)
+            pipeline = _pipeline(search, reader, store, writer, settings)
+
+            def on_lead(count, lead):
+                stop_after_first["count"] = count
+
+            queued = pipeline.run(on_lead=on_lead, should_stop=should_stop)
+        self.assertEqual(queued, 1)  # b.test and c.test never fetched once stop was requested
+
     def test_no_cap_behaves_as_before(self):
         settings, search, reader = self._three_query_setup()
         with SeenStore(":memory:") as store:

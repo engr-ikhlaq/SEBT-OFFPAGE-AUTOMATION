@@ -117,6 +117,15 @@ class LeadPipeline:
                 failures_in_row = 0
 
                 for result in self._candidates(results):
+                    # Checked here too, not just between queries - a single
+                    # query's results can take a while to read/crawl/verify,
+                    # and Stop should take effect promptly rather than only
+                    # after the whole batch of results finishes. Whatever
+                    # was already queued stays queued (LeadWriter has
+                    # already saved it, batch_size=1 by default).
+                    if should_stop is not None and should_stop():
+                        return queued
+
                     # run_domains covers leads still buffered (not yet marked seen in the store).
                     if result.domain in run_domains or self._store.is_seen(result.domain):
                         continue
