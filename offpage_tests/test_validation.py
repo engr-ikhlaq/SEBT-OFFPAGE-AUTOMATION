@@ -112,6 +112,33 @@ class RelevanceGateTests(unittest.TestCase):
         page = PageData(title="Snapchat tips", body="Write for us: guest post about snapchat.")
         self.assertIn("topic not clear", self.gate.rejection_reason("snapchat cloaking agency", page))
 
+    def test_a_guest_posting_service_portfolio_is_rejected_despite_a_stray_keyword_mention(self):
+        # Modeled on a real false positive: a "guest posting expert" portfolio
+        # site, unrelated to peptides, that happened to have ONE client
+        # testimonial mentioning "peptide" among many for other industries.
+        page = PageData(
+            title="Farhan Rasool - Guest Posting Expert & Publisher",
+            body=(
+                "Professional guest posting expert and publisher specializing in "
+                "top-tier publications like Forbes, Fox News, Yahoo Finance, and "
+                "TechCrunch. Write for us or submit a guest post. "
+                "Client win: Semaject wins top honors at Canadian Peptide "
+                "Association Awards for best overall peptide."
+            ),
+        )
+        reason = self.gate.rejection_reason("pept", page)
+        self.assertIsNotNone(reason)
+        self.assertIn("guest-posting/link-building service", reason)
+
+    def test_a_genuine_niche_blog_with_the_same_cta_wording_still_passes(self):
+        # Same guest-post invitation wording as the rejected case above, but
+        # on a page that's actually about the topic, with no marketplace signals.
+        page = PageData(
+            title="Peptide Research Blog",
+            body="We cover peptide research and welcome guest posts. Write for us or submit a guest post.",
+        )
+        self.assertIsNone(self.gate.rejection_reason("pept", page))
+
 
 if __name__ == "__main__":
     unittest.main()
