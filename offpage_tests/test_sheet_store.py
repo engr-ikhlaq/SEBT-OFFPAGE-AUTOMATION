@@ -43,9 +43,6 @@ class FakeWorksheet:
             r.append("")
         r[col - 1] = value
 
-    def clear(self):
-        self.rows = []
-
 
 class SheetStoreTests(unittest.TestCase):
     def test_ensure_headers_writes_them_once(self):
@@ -88,19 +85,6 @@ class SheetStoreTests(unittest.TestCase):
         # eligible for a retry, same as local_store/sheets_source.
         pending = store.read_recipients(skip_already_sent=True)
         self.assertEqual([r["Email"] for r in pending], ["b@b.test"])
-
-    def test_clear_wipes_rows_but_keeps_the_header(self):
-        ws = FakeWorksheet()
-        store = SheetStore(ws)
-        store.ensure_headers()
-        store.append_rows([
-            ["d", "k", "q", "a.test", "https://a.test", "a@a.test", "", "", "0", "", "", ""],
-        ])
-
-        store.clear()
-
-        self.assertEqual(ws.rows, [list(HEADERS)])
-        self.assertEqual(store.read_recipients(skip_already_sent=False), [])
 
 
 if __name__ == "__main__":

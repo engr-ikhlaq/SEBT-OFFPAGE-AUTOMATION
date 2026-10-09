@@ -155,13 +155,31 @@ def sender_for_current_user() -> tuple[MailerConfig, object]:
     return cfg, SmtpSender(cfg)
 
 
+def _visible_leads(backend, username: str) -> list[dict]:
+    """This user's leads, minus whatever "Clear leads" has hidden (see
+    clear_leads()) — NEVER deletes anything from backend itself, just
+    filters rows at or before their watermark out of what gets displayed."""
+    watermark = db.get_leads_watermark(username)
+    rows = backend.read_recipients(skip_already_sent=False)
+    return [row for row in rows if row.get("row", 0) > watermark]
+
+
+def _lead_counts(rows: list[dict]) -> dict:
+    counts = {"total": 0, "sent": 0, "failed": 0, "pending": 0}
+    for row in rows:
+        status = str(row.get("Status") or "").strip().lower()
+        counts["total"] += 1
+        counts[status if status in ("sent", "failed") else "pending"] += 1
+    return counts
+
+
 def _google_account_context() -> dict:
     """Shared by every index.html render call, so the connect-status panel
     (and the fallback-to-SMTP note) always reflects the same lookup."""
     username = session.get("username", "")
     backend = data_source.for_user(username, require_owner())
     try:
-        scraped_leads = backend.read_recipients(skip_already_sent=False)
+        scraped_leads = _visible_leads(backend, username)
         scraped_leads.sort(key=lambda lead: lead.get("row", 0), reverse=True)
         scraped_leads = scraped_leads[:50]
     except Exception:
@@ -646,7 +664,7 @@ def dashboard():
 
     backend = data_source.for_user(session["username"], require_owner())
     try:
-        lead_counts = backend.get_lead_counts()
+        lead_counts = _lead_counts(_visible_leads(backend, session["username"]))
     except Exception:
         log.exception("Could not read lead counts from %s", backend.name)
         lead_counts = None
@@ -674,17 +692,24 @@ def dashboard():
 
 @app.route("/leads/clear", methods=["POST"])
 def clear_leads():
-    """Wipes every scraped lead in the CALLER's own backend (their local
-    file, their own connected Sheet, or — owner only — the shared admin
-    Sheet). Never touches another user's data, since data_source.for_user()
-    already resolves to exactly one person's own store."""
+    """Hides every lead CURRENTLY visible to the caller from their own
+    dashboard/Compose view — raises their watermark (see
+    db.set_leads_watermark) past every row that exists right now.
+
+    This never touches the actual Sheet or local file: the real data in
+    backend.name is untouched, and anything scraped from here on (a new
+    row, with a higher row number) still shows up normally."""
     if not require_login():
         return redirect(url_for("login"))
 
     backend = data_source.for_user(session["username"], require_owner())
     try:
-        backend.clear()
-        flash(f"Cleared all leads from {backend.name}.")
+        rows = backend.read_recipients(skip_already_sent=False)
+        highest_row = max((row.get("row", 0) for row in rows), default=0)
+        current_watermark = db.get_leads_watermark(session["username"])
+        db.set_leads_watermark(session["username"], max(highest_row, current_watermark))
+        flash(f"Cleared {len(rows)} lead(s) from your dashboard view. "
+              f"{backend.name} itself is untouched — new leads will still show up.")
     except Exception as e:
         flash(f"Could not clear leads: {e}")
 
@@ -693,14 +718,14 @@ def clear_leads():
 
 @app.route("/leads/recent")
 def leads_recent():
-    """JSON list of the caller's own scraped leads — polled from the
-    Compose page so leads show up there as the scraper finds them, not
-    only after a full page reload."""
+    """JSON list of the caller's own scraped leads (minus anything they've
+    cleared from view) — polled from the Compose page so leads show up
+    there as the scraper finds them, not only after a full page reload."""
     if (refusal := _require_login_json()) is not None:
         return refusal
     backend = data_source.for_user(session["username"], require_owner())
     try:
-        leads = backend.read_recipients(skip_already_sent=False)
+        leads = _visible_leads(backend, session["username"])
     except Exception as e:
         return {"error": str(e)}, 500
     leads.sort(key=lambda lead: lead.get("row", 0), reverse=True)

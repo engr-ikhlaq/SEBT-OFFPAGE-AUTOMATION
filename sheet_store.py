@@ -77,9 +77,3 @@ class SheetStore:
             counts["total"] += 1
             counts[status if status in ("sent", "failed") else "pending"] += 1
         return counts
-
-    def clear(self) -> None:
-        """Wipes every data row but keeps the header row, so the sheet
-        stays usable for the next scrape without a re-run of ensure_headers."""
-        self._ws.clear()
-        self._ws.update(range_name=f"A1:{gspread.utils.rowcol_to_a1(1, len(HEADERS))}", values=[list(HEADERS)])

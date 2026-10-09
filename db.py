@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS manual_email_accounts (
     connected_at    TEXT NOT NULL
 );
 
+-- "Clear leads" on the dashboard/Compose page only ever hides rows from
+-- THIS app's own view - it must never delete anything from the actual
+-- Sheet or local file, since that's a user's real data (and, for the
+-- shared admin Sheet, everyone's). A row with row-number <= watermark_row
+-- is hidden from this user's lead list/counts; anything scraped after
+-- still shows up normally. See data_source.py / app.py's clear_leads().
+CREATE TABLE IF NOT EXISTS lead_dashboard_clears (
+    username        TEXT PRIMARY KEY,
+    watermark_row   INTEGER NOT NULL DEFAULT 0,
+    cleared_at      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_recipients_campaign ON recipients(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_recipients_token ON recipients(token);
 CREATE INDEX IF NOT EXISTS idx_events_recipient ON events(recipient_id);
@@ -546,3 +558,27 @@ def get_manual_email_account(username: str):
 def delete_manual_email_account(username: str) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM manual_email_accounts WHERE username=?", (username,))
+
+
+# ---------------------------------------------------------------------------
+# Per-user "clear leads" watermark - hides rows from the dashboard view
+# without ever touching the Sheet/local file itself (see schema comment above).
+# ---------------------------------------------------------------------------
+
+def get_leads_watermark(username: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT watermark_row FROM lead_dashboard_clears WHERE username=?", (username,)
+        ).fetchone()
+        return row["watermark_row"] if row else 0
+
+
+def set_leads_watermark(username: str, watermark_row: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO lead_dashboard_clears (username, watermark_row, cleared_at) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(username) DO UPDATE SET "
+            "  watermark_row=excluded.watermark_row, cleared_at=excluded.cleared_at",
+            (username, watermark_row, now_iso()),
+        )

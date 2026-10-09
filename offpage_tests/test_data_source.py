@@ -60,53 +60,6 @@ class ForUserBackendSelectionTests(unittest.TestCase):
         self.assertNotEqual(alice._path, bob._path)
 
 
-class ClearTests(unittest.TestCase):
-    """backend.clear() — the dashboard/compose "delete my leads" button.
-    Every backend variant must support it, and it must only ever touch
-    the ONE backend it was called on."""
-
-    def setUp(self):
-        self._tmpdir = pathlib.Path(tempfile.mkdtemp())
-
-    def test_local_backend_clear_deletes_only_that_users_file(self):
-        alice_path = self._tmpdir / "leads_alice.xlsx"
-        bob_path = self._tmpdir / "leads_bob.xlsx"
-        with mock.patch.object(local_store, "user_leads_path",
-                                side_effect=lambda name: {"alice": alice_path, "bob": bob_path}[name]):
-            alice = data_source.for_user("alice", is_owner=False)
-            bob = data_source.for_user("bob", is_owner=False)
-        local_store.ExcelSink(path=alice_path).append_rows([
-            ["d", "k", "q", "a.test", "https://a.test", "a@a.test", "", "", 0, "", "", ""],
-        ])
-        local_store.ExcelSink(path=bob_path).append_rows([
-            ["d", "k", "q", "b.test", "https://b.test", "b@b.test", "", "", 0, "", "", ""],
-        ])
-
-        alice.clear()
-
-        self.assertFalse(alice_path.exists())
-        self.assertTrue(bob_path.exists())  # clearing Alice's never touches Bob's
-
-    def test_user_sheet_backend_clear_delegates_to_the_sheet_store(self):
-        class FakeStore:
-            def __init__(self):
-                self.cleared = False
-
-            def clear(self):
-                self.cleared = True
-
-        fake_store = FakeStore()
-        backend = data_source._UserSheetBackend(fake_store, "your connected Sheet")
-        backend.clear()
-        self.assertTrue(fake_store.cleared)
-
-    def test_admin_sheets_backend_clear_delegates_to_sheets_source(self):
-        backend = data_source._SheetsSourceBackend("the shared Google Sheet")
-        with mock.patch.object(data_source.sheets_source, "clear_leads") as clear_leads:
-            backend.clear()
-        clear_leads.assert_called_once()
-
-
 class MigrateToSheetTests(unittest.TestCase):
     def setUp(self):
         self._tmpdir = pathlib.Path(tempfile.mkdtemp())

@@ -60,9 +60,6 @@ class _SheetsSourceBackend:
         )
         return SheetSink(ws)
 
-    def clear(self) -> None:
-        sheets_source.clear_leads()
-
 
 class _LocalBackend:
     """A specific local Excel file — the per-user default, or the shared
@@ -84,9 +81,6 @@ class _LocalBackend:
     def make_sink(self):
         return local_store.ExcelSink(path=self._path)
 
-    def clear(self) -> None:
-        local_store.clear(self._path)
-
 
 class _UserSheetBackend:
     """A user's own personally-connected Sheet (OAuth)."""
@@ -107,9 +101,6 @@ class _UserSheetBackend:
     def make_sink(self):
         return self._store
 
-    def clear(self) -> None:
-        self._store.clear()
-
 
 def admin_sheet_configured() -> bool:
     return sheets_source.is_configured()
@@ -118,8 +109,7 @@ def admin_sheet_configured() -> bool:
 def for_user(username: str, is_owner: bool):
     """The backend THIS user's leads live in — see module docstring for
     the priority order. Returns an object with read_recipients(),
-    write_result(), get_lead_counts(), make_sink(), clear(), and a .name
-    for display."""
+    write_result(), get_lead_counts(), make_sink(), and a .name for display."""
     import db
 
     account = db.get_google_account(username)

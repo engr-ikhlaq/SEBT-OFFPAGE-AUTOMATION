@@ -139,9 +139,9 @@
                 <h2>Scraped leads <span class="hint" style="font-weight:400;">(<span id="leads-count">{{ scraped_leads|length }}</span> in {{ data_backend_name }})</span></h2>
                 {% if scraped_leads %}
                 <form method="POST" action="{{ url_for('clear_leads') }}"
-                      onsubmit="return confirm('Permanently delete every lead in {{ data_backend_name }}? This cannot be undone.');">
+                      onsubmit="return confirm('Clear these leads from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" style="font-size:12px; padding:6px 12px; color:var(--accent-2);">&#128465; Clear leads</button>
+                    <button type="submit" title="Clear from this view only — does not delete from {{ data_backend_name }}" style="font-size:12px; padding:6px 12px; color:var(--accent-2);">&#128465; Clear leads</button>
                 </form>
                 {% endif %}
             </div>
