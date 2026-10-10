@@ -35,6 +35,7 @@ import threading
 from pathlib import Path
 
 import requests
+from selenium.common.exceptions import InvalidSessionIdException
 
 import data_source
 from offpage.browser import BrowserSession, GoogleSearch, PageReader
@@ -202,6 +203,21 @@ def _run_batch(keyword: str, username: str, is_owner: bool) -> None:
                 writer=writer,
             )
             pipeline.run(max_leads=LEADS_PER_BATCH, on_lead=_on_lead, should_stop=_should_stop)
+    except InvalidSessionIdException:
+        # Raised when the Chrome window itself is gone mid-run - closed
+        # (by hand or by the OS), crashed, or killed - rather than any
+        # search/page failure. selenium's own message for this is a huge
+        # native-stack-trace dump that's meaningless to someone reading it
+        # in a browser alert, so it's swapped for a plain explanation.
+        # Only reachable when SCRAPE_HEADLESS=false, since a headless
+        # Chrome has no window for anyone to close.
+        log.exception("Scrape job failed: browser window closed mid-run")
+        with _lock:
+            _status.state = "error"
+            _status.error = ("The Chrome window closed before scraping finished - it may have been "
+                              "closed by hand, or crashed. Leave it open until a batch completes (use "
+                              "the Stop button here instead of closing the window), then start again.")
+        return
     except Exception as exc:
         log.exception("Scrape job failed")
         with _lock:
