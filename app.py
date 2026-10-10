@@ -1104,5 +1104,9 @@ def check_replies():
 
 
 if __name__ == "__main__":
-    # debug=False in anything resembling production
-    app.run(debug=True, port=5000)
+    # debug=False in anything resembling production.
+    # threaded=True: the dashboard alone issues several DB queries and can
+    # take a couple of seconds - without this, Flask's dev server handles
+    # one request at a time, so a second user (or a reverse-proxy/tunnel's
+    # own probe requests) queues up behind it and can time out.
+    app.run(debug=True, port=5000, threaded=True)
