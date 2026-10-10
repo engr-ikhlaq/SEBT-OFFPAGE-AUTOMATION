@@ -134,10 +134,18 @@ def _should_stop() -> bool:
 
 
 def _run_outreach(base_url: str, cfg, sender, backend, username: str) -> None:
+    from app import app as flask_app  # lazy: app.py imports this module, so a top-level import would be circular
     try:
-        auto_outreach.send_pending_leads(
-            base_url, cfg, sender, backend, username, on_progress=_on_progress, should_stop=_should_stop,
-        )
+        with flask_app.app_context():
+            # auto_outreach.send_pending_leads() calls render_template() to
+            # build each email's HTML - that needs an app context, which a
+            # plain background thread doesn't get for free the way a
+            # request handler does. Without this, it fails with "Working
+            # outside of application context" the first time it tries to
+            # render anything.
+            auto_outreach.send_pending_leads(
+                base_url, cfg, sender, backend, username, on_progress=_on_progress, should_stop=_should_stop,
+            )
     except Exception as exc:
         log.exception("Outreach run failed")
         with _lock:
@@ -149,8 +157,10 @@ def _run_outreach(base_url: str, cfg, sender, backend, username: str) -> None:
 
 
 def _run_followups(base_url: str, cfg, sender, username: str) -> None:
+    from app import app as flask_app  # see _run_outreach
     try:
-        result = auto_outreach.send_due_followups(base_url, cfg, sender, username)
+        with flask_app.app_context():
+            result = auto_outreach.send_due_followups(base_url, cfg, sender, username)
     except Exception as exc:
         log.exception("Follow-up run failed")
         with _lock:

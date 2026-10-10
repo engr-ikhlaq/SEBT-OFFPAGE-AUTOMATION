@@ -1,13 +1,26 @@
 """outreach_job's state machine, with the real send functions substituted
-for a fake - these tests never open an SMTP connection."""
+for a fake - these tests never open an SMTP connection.
+
+_run_outreach/_run_followups lazily import the real Flask app (to push an
+app context around auto_outreach's render_template calls - see
+outreach_job.py), so db.DB_PATH is pointed at a throwaway file BEFORE
+that import can happen - same reasoning as test_signup_route.py's module
+docstring: otherwise that first import triggers app.py's module-level
+db.init_db() against the real tracking.db."""
 from __future__ import annotations
 
+import pathlib
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import db
+
+db.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "tracking.db"
+db.init_db()
 import outreach_job
 
 
