@@ -173,7 +173,13 @@ def _throttle_delay(base_seconds: float) -> float:
     than the exact same gap every time - a real person pausing between
     emails doesn't do it to the second, and an identical interval, repeated
     across every message in a run, is itself a pattern an exact-timing
-    send never has."""
+    send never has. Also occasionally (~1 in 7) a longer pause, standing in
+    for someone getting pulled away for a bit mid-batch - a real sender's
+    gaps aren't all the same order of magnitude either."""
+    if base_seconds <= 0:
+        return 0
+    if random.random() < (1 / 7):
+        return base_seconds * random.uniform(3, 6)
     return base_seconds * random.uniform(0.6, 1.8)
 
 

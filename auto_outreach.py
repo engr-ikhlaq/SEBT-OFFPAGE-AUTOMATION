@@ -37,6 +37,7 @@ or already-followed-up rows are skipped automatically.
 from __future__ import annotations
 
 import logging
+import random
 
 import db
 from mailer import MailerConfig, personalize, send_batch
@@ -45,34 +46,85 @@ log = logging.getLogger("auto_outreach")
 
 FOLLOW_UP_AFTER_HOURS = 24
 
-OUTREACH_SUBJECT = "Content Contribution Idea - {{domain}}"
+# Several independent variants per slot, recombined per lead (see
+# _build_outreach_message) - sending the exact same template to dozens of
+# different recipients is itself a spam signal (near-duplicate bulk
+# content is one of the things filters look for), separately from
+# whatever the content actually says. {{url}}, {{keyword}}, {{sender_name}}
+# are substituted per lead by mailer.personalize(); {{email}}/{{token}}/
+# {{pixel_url}} come from the existing tracking machinery.
 
-# {{url}}, {{keyword}}, {{sender_name}} are substituted per lead by mailer.personalize().
-# {{email}}/{{token}}/{{pixel_url}} come from the existing tracking machinery.
-_OUTREACH_BODY_LINES = (
-    "Hi,",
-    "",
-    "I came across this page: {{url}} — and wanted to reach out about "
-    "contributing something related.",
-    "",
-    "I write original, data-backed content and think a related piece could "
-    "be a good fit for your site. A few directions I could take it:",
-    "",
+_SUBJECT_VARIANTS = (
+    "Content Contribution Idea - {{domain}}",
+    "A quick content idea for {{domain}}",
+    "Pitching a piece for {{domain}}",
+)
+
+# Each entry is (greeting, first_paragraph) - two separate lines/paragraphs.
+_OPENING_VARIANTS = (
+    ("Hi,", "I came across this page: {{url}} — and wanted to reach out about contributing something related."),
+    ("Hi,", "I landed on {{url}} recently and wanted to reach out — I'd love to contribute something to your site."),
+    ("Hello,", "I've been reading through {{url}} and wanted to get in touch about a possible contribution."),
+)
+
+_PITCH_INTRO_VARIANTS = (
+    "I write original, data-backed content and think a related piece could be a good fit for your site. "
+    "A few directions I could take it:",
+    "I focus on well-researched, original writing and think something adjacent could work well for your "
+    "readers. A couple of directions that could work:",
+    "My writing tends to be research-driven and original. Here are a few angles that might suit your audience:",
+)
+
+_BULLET_LINES = (
     "- A survey or data-driven piece (related to {{keyword}})",
     "- A myth-vs-fact or comparison breakdown of common approaches",
     "- A practical guide or checklist",
-    "",
-    "Do you have any recommendations on what would be most useful for your "
-    "readers — whether that's one of the above, a different angle to "
-    "research or compare, or something else relevant to {{keyword}}?",
-    "",
-    "Happy to send a short outline first so your team can review before "
-    "anything's finalized — and if it runs, a citation/link back to my "
-    "source would be appreciated.",
-    "",
-    "Regards,",
-    "{{sender_name}}",
 )
+
+_CLOSER_VARIANTS = (
+    "Do you have any recommendations on what would be most useful for your readers — whether that's one of "
+    "the above, a different angle to research or compare, or something else relevant to {{keyword}}?",
+    "Would any of these be useful to your readers, or is there a different angle on {{keyword}} you'd rather "
+    "see covered?",
+    "Let me know if any of these would be a good fit, or if there's something else about {{keyword}} you'd "
+    "find more useful.",
+)
+
+_APPRECIATION_VARIANTS = (
+    "Happy to send a short outline first so your team can review before anything's finalized — and if it "
+    "runs, a citation/link back to my source would be appreciated.",
+    "I can send over a short outline first if that's easier to review — and a credit/link back to my source "
+    "would be appreciated if it goes live.",
+    "I'm glad to share a brief outline before writing anything in full, and would appreciate a link back to "
+    "my source if it's published.",
+)
+
+_SIGNOFF_VARIANTS = ("Regards,", "Best,", "Thanks,")
+
+
+def _build_outreach_message() -> tuple[str, tuple[str, ...]]:
+    """A fresh (subject, body_lines) combination, picked independently per
+    call — so two different leads essentially never get byte-identical
+    content, without changing what the pitch actually says."""
+    greeting, opening = random.choice(_OPENING_VARIANTS)
+    lines = (
+        greeting,
+        "",
+        opening,
+        "",
+        random.choice(_PITCH_INTRO_VARIANTS),
+        "",
+        *_BULLET_LINES,
+        "",
+        random.choice(_CLOSER_VARIANTS),
+        "",
+        random.choice(_APPRECIATION_VARIANTS),
+        "",
+        random.choice(_SIGNOFF_VARIANTS),
+        "{{sender_name}}",
+    )
+    return random.choice(_SUBJECT_VARIANTS), lines
+
 
 FOLLOWUP_SUBJECT = "Re: Content Contribution Idea - {{domain}}"
 
@@ -138,8 +190,10 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
             summary["skipped"].append(row)
             continue
 
+        subject_template, body_lines = _build_outreach_message()
+
         campaign_id = db.create_campaign(
-            subject=personalize(OUTREACH_SUBJECT, {"domain": domain}),
+            subject=personalize(subject_template, {"domain": domain}),
             message="(auto-outreach)", link_url=url, link_text="",
         )
         _, token = db.create_recipient(
@@ -150,11 +204,11 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
         pixel_url_template = open_pixel_url(base_url, "{{token}}")
         unsubscribe_url_template = build_unsub_url(base_url, "{{email}}")
         html_template = _render_email_html(
-            _html_body(_OUTREACH_BODY_LINES),
+            _html_body(body_lines),
             pixel_url_template=pixel_url_template,
             unsubscribe_url_template=unsubscribe_url_template,
         )
-        text_template = _text_body(_OUTREACH_BODY_LINES) + f"\n\nUnsubscribe: {unsubscribe_url_template}"
+        text_template = _text_body(body_lines) + f"\n\nUnsubscribe: {unsubscribe_url_template}"
 
         extra = {email: {"domain": domain, "url": url, "keyword": keyword, "sender_name": cfg.from_name}}
 
@@ -163,7 +217,7 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
                 cfg,
                 sender,
                 recipients=[email],
-                subject=OUTREACH_SUBJECT,
+                subject=subject_template,
                 html_template=html_template,
                 text_template=text_template,
                 unsubscribe_url_template=unsubscribe_url_template,

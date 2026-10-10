@@ -157,13 +157,19 @@ class SendBatchTransportTests(unittest.TestCase):
 class ThrottleDelayTests(unittest.TestCase):
     """A fixed, identical gap between every send is itself a bot-like
     pattern - _throttle_delay varies it instead of returning base_seconds
-    verbatim."""
+    verbatim, and occasionally throws in a longer pause."""
 
-    def test_stays_within_the_06x_to_18x_range(self):
-        for _ in range(200):
+    def test_every_delay_is_either_the_short_or_long_range(self):
+        for _ in range(500):
             delay = mailer._throttle_delay(5)
-            self.assertGreaterEqual(delay, 5 * 0.6)
-            self.assertLessEqual(delay, 5 * 1.8)
+            short_range = 5 * 0.6 <= delay <= 5 * 1.8
+            long_range = 5 * 3 <= delay <= 5 * 6
+            self.assertTrue(short_range or long_range, delay)
+
+    def test_a_longer_pause_happens_sometimes_but_not_every_time(self):
+        delays = [mailer._throttle_delay(5) for _ in range(300)]
+        self.assertTrue(any(d > 5 * 1.8 for d in delays))   # the long pause fires at least once
+        self.assertTrue(any(d <= 5 * 1.8 for d in delays))  # but isn't every single delay
 
     def test_repeated_calls_are_not_all_identical(self):
         delays = {mailer._throttle_delay(5) for _ in range(20)}
