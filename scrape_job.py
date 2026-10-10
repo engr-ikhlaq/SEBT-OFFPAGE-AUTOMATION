@@ -223,14 +223,19 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
     http.headers["User-Agent"] = USER_AGENT
     parser = PageParser()
     scorer = Scorer()
-    writer: LeadWriter | None = None
 
     try:
         with SeenStore(settings.seen_db_path) as store, \
              BrowserSession(headless=_HEADLESS, lang=language) as session:
             sink = backend.make_sink()
             sink.ensure_headers()
-            writer = LeadWriter(sink, store, settings.batch_size)
+            # async_writes=True: each lead's row is saved on a background
+            # thread the instant it's confirmed, in parallel with the
+            # scraper moving straight on to the next search/page instead
+            # of blocking on the Sheets API round trip first - the Sheet
+            # and the scrape progress stay in step without the write
+            # latency adding to how long the scrape itself takes.
+            writer = LeadWriter(sink, store, settings.batch_size, async_writes=True)
 
             pipeline = LeadPipeline(
                 settings=settings,
@@ -244,7 +249,22 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
                 store=store,
                 writer=writer,
             )
-            pipeline.run(max_leads=LEADS_PER_BATCH, on_lead=_on_lead, should_stop=_should_stop)
+            try:
+                pipeline.run(max_leads=LEADS_PER_BATCH, on_lead=_on_lead, should_stop=_should_stop)
+            finally:
+                # Must happen INSIDE this `with` block, before store/session
+                # close - the background write thread needs both still open
+                # to finish saving whatever's still queued, whether this
+                # batch ended cleanly, was stopped, or the browser itself
+                # failed (a Sheets API write has nothing to do with Chrome,
+                # so it's still worth finishing even then).
+                try:
+                    writer.flush()
+                    writer.wait_all()
+                except Exception:
+                    log.exception("Could not save all pending leads")
+                finally:
+                    writer.close()
     except InvalidSessionIdException:
         # Raised when the Chrome window itself is gone mid-run - closed
         # (by hand or by the OS), crashed, or killed - rather than any
@@ -266,12 +286,6 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
             _status.state = "error"
             _status.error = str(exc)
         return
-    finally:
-        if writer is not None:
-            try:
-                writer.flush()
-            except Exception:
-                log.exception("Could not save pending leads")
 
     with _lock:
         if _stop_requested:
