@@ -27,6 +27,7 @@ there's exactly one place that makes this decision.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import google_oauth
@@ -123,10 +124,43 @@ def open_worksheet_by_id(sheet_id: str, worksheet_name: str | None):
     return open_worksheet(Path(creds_file), sheet_id, worksheet_name or None)
 
 
+# Resolving a Sheet-backed user means a real Sheets API call just to OPEN
+# it (gspread's open_by_key() does a metadata fetch) - before a single
+# lead is even read. for_user() gets called on nearly every request
+# (Compose page load, /leads/recent, /dashboard, each polled every couple
+# of seconds while a scrape is running), so re-opening on every single
+# call burns through Google's ~60-reads/minute-per-user quota fast and
+# turns into a 429 that previously crashed the page outright. Caching the
+# resolved backend for a short window means a poll loop reuses the same
+# already-open connection instead of re-opening it every tick.
+_BACKEND_CACHE_TTL = 20.0
+_backend_cache: dict[str, tuple[float, object]] = {}
+
+
+def invalidate_user_backend_cache(username: str) -> None:
+    """Call right after anything that changes WHICH backend a user
+    resolves to (connecting/disconnecting a Sheet) so the next request
+    picks up the change immediately instead of waiting out the TTL."""
+    _backend_cache.pop(f"{username}:True", None)
+    _backend_cache.pop(f"{username}:False", None)
+
+
 def for_user(username: str, is_owner: bool):
     """The backend THIS user's leads live in — see module docstring for
     the priority order. Returns an object with read_recipients(),
-    write_result(), get_lead_counts(), make_sink(), and a .name for display."""
+    write_result(), get_lead_counts(), make_sink(), and a .name for display.
+    Cached briefly per (username, is_owner) — see _BACKEND_CACHE_TTL."""
+    cache_key = f"{username}:{is_owner}"
+    cached = _backend_cache.get(cache_key)
+    if cached is not None and time.monotonic() - cached[0] < _BACKEND_CACHE_TTL:
+        return cached[1]
+
+    backend = _resolve_backend(username, is_owner)
+    _backend_cache[cache_key] = (time.monotonic(), backend)
+    return backend
+
+
+def _resolve_backend(username: str, is_owner: bool):
     import db
 
     account = db.get_google_account(username)

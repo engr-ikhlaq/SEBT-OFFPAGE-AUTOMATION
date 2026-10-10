@@ -23,6 +23,7 @@ Setup required (see README / chat walkthrough):
 
 import json
 import os
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -60,7 +61,23 @@ def service_account_email() -> str | None:
         return None
 
 
+# open_by_key() does a real Sheets API read just to open the spreadsheet
+# (metadata fetch), before read_recipients/write_result/get_lead_counts do
+# any actual work - each of those called _get_worksheet() fresh, so three
+# calls in one request (as the dashboard does) cost three "opens" on top
+# of the reads/writes themselves. Cached briefly so a burst of calls
+# (polling, or one request that reads then writes) reuses the same
+# connection instead of re-opening it every time - see data_source.py's
+# identical reasoning for the per-user Sheet path.
+_WORKSHEET_CACHE_TTL = 20.0
+_worksheet_cache: tuple[float, "gspread.Worksheet"] | None = None
+
+
 def _get_worksheet():
+    global _worksheet_cache
+    if _worksheet_cache is not None and time.monotonic() - _worksheet_cache[0] < _WORKSHEET_CACHE_TTL:
+        return _worksheet_cache[1]
+
     creds_file = os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"]
     sheet_id = os.environ["GOOGLE_SHEET_ID"]
     worksheet_name = os.environ.get("GOOGLE_WORKSHEET_NAME", "Sheet1")
@@ -74,7 +91,9 @@ def _get_worksheet():
     creds = Credentials.from_service_account_file(creds_file, scopes=SCOPES)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(sheet_id)
-    return sheet.worksheet(worksheet_name)
+    worksheet = sheet.worksheet(worksheet_name)
+    _worksheet_cache = (time.monotonic(), worksheet)
+    return worksheet
 
 
 def read_recipients(skip_already_sent: bool = True) -> list[dict]:

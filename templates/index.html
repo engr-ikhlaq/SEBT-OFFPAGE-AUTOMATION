@@ -373,14 +373,24 @@
     }
   }
 
+  let pollTick = 0;
+
   function poll() {
     fetch('/scrape/status').then(r => r.json()).then(applyStatus).catch(() => {});
-    refreshLeadsTable();
+    // /scrape/status is DB-only and cheap to poll every tick; the leads
+    // table means re-reading the actual Sheet/file, so it's refreshed
+    // every 3rd tick (~6s) instead - frequent status polling during a
+    // scrape doesn't need the leads list refreshed just as often, and
+    // doing so was a real contributor to hitting Google's Sheets API
+    // read-quota during a run.
+    pollTick += 1;
+    if (pollTick % 3 === 0) refreshLeadsTable();
   }
 
   function startPolling() {
     if (pollTimer) return;
     poll();
+    refreshLeadsTable();
     pollTimer = setInterval(poll, 2000);
   }
 

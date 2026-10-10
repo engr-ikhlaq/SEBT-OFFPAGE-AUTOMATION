@@ -19,6 +19,7 @@ class ForUserBackendSelectionTests(unittest.TestCase):
     def setUp(self):
         db.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "tracking.db"
         db.init_db()
+        data_source._backend_cache.clear()  # for_user() caches briefly; don't leak between tests
 
     def test_brand_new_user_gets_their_own_local_file_even_with_admin_sheet_configured(self):
         with mock.patch.object(data_source, "admin_sheet_configured", return_value=True):

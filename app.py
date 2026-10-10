@@ -245,11 +245,23 @@ def _lead_counts(rows: list[dict]) -> dict:
     return counts
 
 
+class _UnavailableBackend:
+    """Stand-in used when even opening the real backend fails (e.g. a
+    Sheets API quota/network hiccup) - gives the page something to render
+    instead of a 500, see _google_account_context()."""
+    name = "your leads store (temporarily unavailable)"
+
+
 def _google_account_context() -> dict:
     """Shared by every index.html render call, so the connect-status panel
     (and the fallback-to-SMTP note) always reflects the same lookup."""
     username = session.get("username", "")
-    backend = data_source.for_user(username, require_owner())
+    try:
+        backend = data_source.for_user(username, require_owner())
+    except Exception:
+        log.exception("Could not resolve a leads backend for %s", username)
+        backend = _UnavailableBackend()
+
     try:
         scraped_leads = _visible_leads(backend, username)
         scraped_leads.sort(key=lambda lead: lead.get("row", 0), reverse=True)
@@ -665,6 +677,7 @@ def connect_google_callback():
         access_token=credentials.token,
         sheet_id=sheet_id,
     )
+    data_source.invalidate_user_backend_cache(session["username"])
 
     try:
         backend = data_source.for_user(session["username"], require_owner())
@@ -685,6 +698,7 @@ def connect_google_disconnect():
     if not require_login():
         return redirect(url_for("login"))
     db.delete_google_account(session["username"])
+    data_source.invalidate_user_backend_cache(session["username"])
     flash("Disconnected your Google account. Sending falls back to the shared SMTP setup.")
     return redirect(url_for("index"))
 
@@ -759,6 +773,7 @@ def connect_sheet():
         return redirect(url_for("index"))
 
     db.save_user_sheet(session["username"], sheet_id, worksheet_name)
+    data_source.invalidate_user_backend_cache(session["username"])
 
     try:
         backend = data_source.for_user(session["username"], require_owner())
@@ -776,6 +791,7 @@ def connect_sheet_disconnect():
     if not require_login():
         return redirect(url_for("login"))
     db.delete_user_sheet(session["username"])
+    data_source.invalidate_user_backend_cache(session["username"])
     flash("Disconnected your Google Sheet. New leads will go to your local file instead.")
     return redirect(url_for("index"))
 
@@ -969,7 +985,11 @@ def dashboard():
     needle_x, needle_y = _gauge_needle(reply_rate / 100)
     opens_spark = _sparkline_points(opens_by_day)
 
-    backend = data_source.for_user(session["username"], require_owner())
+    try:
+        backend = data_source.for_user(session["username"], require_owner())
+    except Exception:
+        log.exception("Could not resolve a leads backend for %s", username)
+        backend = _UnavailableBackend()
     try:
         lead_counts = _lead_counts(_visible_leads(backend, session["username"]))
     except Exception:
@@ -1009,8 +1029,8 @@ def clear_leads():
     if not require_login():
         return redirect(url_for("login"))
 
-    backend = data_source.for_user(session["username"], require_owner())
     try:
+        backend = data_source.for_user(session["username"], require_owner())
         rows = backend.read_recipients(skip_already_sent=False)
         highest_row = max((row.get("row", 0) for row in rows), default=0)
         current_watermark = db.get_leads_watermark(session["username"])
@@ -1030,8 +1050,8 @@ def leads_recent():
     there as the scraper finds them, not only after a full page reload."""
     if (refusal := _require_login_json()) is not None:
         return refusal
-    backend = data_source.for_user(session["username"], require_owner())
     try:
+        backend = data_source.for_user(session["username"], require_owner())
         leads = _visible_leads(backend, session["username"])
     except Exception as e:
         return {"error": str(e)}, 500
