@@ -362,6 +362,15 @@
 
   let pollTimer = null;
   let terminalShown = false;
+  // outreach_job's status is a single shared value that stays at whatever
+  // it last was until the next run starts - a stale "finished" from a
+  // PAST run (even one from before this page was ever loaded) is still
+  // sitting there the next time anyone opens the dashboard. Only alert
+  // for a finish this page itself watched happen (saw state:"running"
+  // first), not one it's discovering secondhand on a fresh load -
+  // otherwise that one leftover finish re-alerts and reloads forever,
+  // since the reload's own first poll() hits the same stale status.
+  let hasSeenRunning = false;
 
   function api(path) {
     return fetch(path, { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
@@ -405,12 +414,13 @@
         progressCount.textContent = `Starting… · ${formatElapsed(s.elapsed_seconds)}`;
       }
       terminalShown = false;
+      hasSeenRunning = true;
       startPolling();
     } else if (s.state === 'finished' || s.state === 'stopped' || s.state === 'error') {
       setButtonsDisabled(false);
       progressBox.style.display = 'none';
       stopPolling();
-      if (!terminalShown) {
+      if (!terminalShown && hasSeenRunning) {
         terminalShown = true;
         if (s.state === 'error') {
           alert(`Run stopped because of an error: ${s.error || 'unknown error'}\n\nSent ${s.sent_count}, failed ${s.failed_count} before it happened.`);
