@@ -31,15 +31,16 @@ def _pause(low: float, high: float) -> None:
 
 
 class BrowserSession:
-    def __init__(self, page_load_timeout: float = 30, headless: bool = False) -> None:
+    def __init__(self, page_load_timeout: float = 30, headless: bool = False, lang: str = "en-GB") -> None:
         self._timeout = page_load_timeout
         self._headless = headless
+        self._lang = lang
         self._driver: webdriver.Chrome | None = None
 
     def __enter__(self) -> BrowserSession:
         options = Options()
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--lang=en-GB")
+        options.add_argument(f"--lang={self._lang}")
         if self._headless:
             options.add_argument("--headless=new")
         else:
@@ -130,16 +131,21 @@ def _type_slowly(element, text: str) -> None:
 
 
 class GoogleSearch:
+    # Kept as the class-level default so anything constructing GoogleSearch
+    # without passing home_url (e.g. main.py's CLI path) behaves exactly as
+    # before - the United Kingdom's Google. The web app passes a region-
+    # specific one explicitly instead (see offpage.regions / scrape_job.py).
     HOME_URL = "https://www.google.co.uk/?hl=en-GB&gl=uk&pws=0"
     RESULT_SELECTOR = "div.g, div.MjjYud"
 
-    def __init__(self, session: BrowserSession, max_pages: int = 5) -> None:
+    def __init__(self, session: BrowserSession, max_pages: int = 5, home_url: str | None = None) -> None:
         self._session = session
         self._max_pages = max_pages
+        self._home_url = home_url or self.HOME_URL
 
     def run(self, query: str) -> list[SearchResult]:
         driver = self._session.driver
-        self._session.open(self.HOME_URL)
+        self._session.open(self._home_url)
         _pause(2, 5)
 
         box = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "q")))

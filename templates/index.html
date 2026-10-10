@@ -158,8 +158,20 @@
             </div>
 
             <div id="scrape-idle-form">
-                <label class="field-label" for="scrape-keyword">Target keyword</label>
-                <input type="text" id="scrape-keyword" placeholder="e.g. peptides, weight loss, SaaS analytics">
+                <div style="display:grid; grid-template-columns: 2fr 1fr; gap:16px;">
+                    <div>
+                        <label class="field-label" for="scrape-keyword">Target keyword</label>
+                        <input type="text" id="scrape-keyword" placeholder="e.g. peptides, weight loss, SaaS analytics">
+                    </div>
+                    <div>
+                        <label class="field-label" for="scrape-region">Result region</label>
+                        <select id="scrape-region">
+                            {% for region in regions %}
+                            <option value="{{ region.code }}" {{ 'selected' if region.code == default_region else '' }}>{{ region.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
                 <button type="button" class="btn-primary" id="scrape-start-btn" style="width:auto; padding:12px 24px; display:inline-flex; align-items:center; gap:8px;">
                     {{ icon_search(15) }} Start scraping
                 </button>
@@ -169,7 +181,7 @@
                 <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px;">
                     <div class="w-icon">{{ icon_search(20) }}</div>
                     <div>
-                        <div style="font-weight:700;">Scraping for "<span id="scrape-keyword-label"></span>"</div>
+                        <div style="font-weight:700;">Scraping for "<span id="scrape-keyword-label"></span>" <span class="hint" style="font-weight:400;">in <span id="scrape-region-label"></span></span></div>
                         <div class="hint" style="margin:2px 0 0;"><span id="scrape-count">0</span> of 100 found this batch &middot; last: <span id="scrape-last-domain">—</span></div>
                     </div>
                 </div>
@@ -290,16 +302,19 @@
 <script>
 (function () {
   const csrfToken = {{ csrf_token() | tojson }};
+  const regionLabels = {{ region_labels | tojson }};
 
   const idleForm = document.getElementById('scrape-idle-form');
   const runningBox = document.getElementById('scrape-running');
   const pausedBox = document.getElementById('scrape-paused');
   const keywordInput = document.getElementById('scrape-keyword');
+  const regionSelect = document.getElementById('scrape-region');
   const startBtn = document.getElementById('scrape-start-btn');
   const stopBtn = document.getElementById('scrape-stop-btn');
   const countEl = document.getElementById('scrape-count');
   const lastDomainEl = document.getElementById('scrape-last-domain');
   const keywordLabelEl = document.getElementById('scrape-keyword-label');
+  const regionLabelEl = document.getElementById('scrape-region-label');
   const progressBar = document.getElementById('scrape-progress-bar');
 
   const pausedKeywordEl = document.getElementById('paused-keyword-label');
@@ -361,6 +376,7 @@
     if (s.state === 'running') {
       setView('running');
       keywordLabelEl.textContent = s.keyword;
+      regionLabelEl.textContent = regionLabels[s.region] || s.region;
       countEl.textContent = s.queued_this_batch;
       lastDomainEl.textContent = s.last_domain || '—';
       progressBar.style.width = Math.min(100, s.queued_this_batch) + '%';
@@ -434,7 +450,7 @@
     const keyword = keywordInput.value.trim();
     if (!keyword) { keywordInput.focus(); return; }
     startBtn.disabled = true;
-    api('/scrape/start', { keyword }).then(({ ok, data }) => {
+    api('/scrape/start', { keyword, region: regionSelect.value }).then(({ ok, data }) => {
       startBtn.disabled = false;
       if (!ok) { alert(data.error || 'Could not start scraping.'); return; }
       applyStatus(data);

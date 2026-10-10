@@ -49,6 +49,7 @@ import auto_outreach
 import google_oauth
 import outreach_job
 import scrape_job
+from offpage.regions import DEFAULT_REGION, REGIONS
 from mailer import GmailApiSender, MailerConfig, SmtpSender, send_batch
 from tracking import tracking_bp
 import data_source
@@ -288,6 +289,9 @@ def _google_account_context() -> dict:
         "service_account_sheets_configured": data_source.service_account_sheets_configured(),
         "service_account_email": sheets_source.service_account_email(),
         "connect_sheet_form": ConnectSheetForm(),
+        "regions": REGIONS.values(),
+        "default_region": DEFAULT_REGION,
+        "region_labels": {code: region.label for code, region in REGIONS.items()},
     }
 
 
@@ -1094,6 +1098,24 @@ def leads_recent():
     return {"leads": leads[:50], "backend_name": backend.name}
 
 
+@app.route("/leads/counts")
+def leads_counts():
+    """JSON {total, sent, failed, pending} for the caller's own leads —
+    polled from the Dashboard while a scrape is running, so the "Leads
+    scraped" widget's number updates live instead of only on page reload,
+    same moment-to-moment view as watching the connected Sheet directly
+    (each lead is written there the instant it's confirmed, see
+    offpage.writer.LeadWriter)."""
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    try:
+        backend = data_source.for_user(session["username"], require_owner())
+        counts = _lead_counts(_visible_leads(backend, session["username"]))
+    except Exception as e:
+        return {"error": str(e)}, 500
+    return counts
+
+
 @app.route("/dashboard/replies-seen", methods=["POST"])
 def mark_replies_seen():
     if not require_login():
@@ -1203,10 +1225,12 @@ def scrape_status():
 def scrape_start():
     if (refusal := _require_login_json()) is not None:
         return refusal
-    keyword = (request.get_json(silent=True) or {}).get("keyword", "").strip()
+    body = request.get_json(silent=True) or {}
+    keyword = body.get("keyword", "").strip()
+    region = body.get("region", "").strip()
     if not keyword:
         return {"error": "Enter a target keyword first."}, 400
-    if not scrape_job.start(keyword, session["username"], require_owner()):
+    if not scrape_job.start(keyword, session["username"], require_owner(), region=region):
         return {"error": "A scrape is already running."}, 409
     return scrape_job.get_status()
 

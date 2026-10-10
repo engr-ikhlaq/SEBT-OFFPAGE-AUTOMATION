@@ -170,7 +170,9 @@
         <div class="widget-section" style="grid-template-columns: repeat(4, 1fr); grid-template-rows: auto;">
             <div class="widget">
                 <div class="w-head">
-                    <div class="w-title"><span class="w-icon">{{ icon_search(15) }}</span> Leads scraped</div>
+                    <div class="w-title"><span class="w-icon">{{ icon_search(15) }}</span> Leads scraped
+                        <span id="scrape-live-badge" style="display:none; color:var(--accent); font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.04em;">&bull; scraping&hellip;</span>
+                    </div>
                     {% if lead_counts and lead_counts.total %}
                     <form method="POST" action="{{ url_for('clear_leads') }}"
                           onsubmit="return confirm('Clear {{ lead_counts.total }} lead(s) from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
@@ -179,22 +181,22 @@
                     </form>
                     {% endif %}
                 </div>
-                <div class="w-value">{{ lead_counts.total if lead_counts is not none else '—' }}</div>
+                <div class="w-value" id="leads-scraped-value">{{ lead_counts.total if lead_counts is not none else '—' }}</div>
                 <div class="w-sub">in {{ data_backend_name }}</div>
             </div>
             <div class="widget">
                 <div class="w-head"><div class="w-title"><span class="w-icon">{{ icon_clock(15) }}</span> Awaiting outreach</div></div>
-                <div class="w-value accent">{{ lead_counts.pending if lead_counts is not none else '—' }}</div>
+                <div class="w-value accent" id="leads-pending-value">{{ lead_counts.pending if lead_counts is not none else '—' }}</div>
                 <div class="w-sub">not yet emailed</div>
             </div>
             <div class="widget">
                 <div class="w-head"><div class="w-title"><span class="w-icon">{{ icon_mail(15) }}</span> Emailed</div></div>
-                <div class="w-value">{{ lead_counts.sent if lead_counts is not none else '—' }}</div>
+                <div class="w-value" id="leads-sent-value">{{ lead_counts.sent if lead_counts is not none else '—' }}</div>
                 <div class="w-sub">outreach sent</div>
             </div>
             <div class="widget">
                 <div class="w-head"><div class="w-title"><span class="w-icon">{{ icon_alert(15) }}</span> Send failed</div></div>
-                <div class="w-value">{{ lead_counts.failed if lead_counts is not none else '—' }}</div>
+                <div class="w-value" id="leads-failed-value">{{ lead_counts.failed if lead_counts is not none else '—' }}</div>
                 <div class="w-sub">needs a look</div>
             </div>
         </div>
@@ -467,6 +469,43 @@
   stopBtn.addEventListener('click', () => { api('/outreach/stop').then(({ data }) => applyStatus(data)); });
 
   poll();  // picks up a run already in progress from a previous page load
+})();
+</script>
+
+<!-- Live-updates the "Leads scraped" numbers above while a scrape is
+     running elsewhere (e.g. the Compose page, or a previous page load) -
+     each lead is already written to the connected Sheet/file the instant
+     it's confirmed (offpage.writer.LeadWriter, batch_size=1), so this is
+     just keeping THIS page's numbers in step with that, the same way the
+     Sheet itself would look if you had it open side by side. -->
+<script>
+(function () {
+  const liveBadge = document.getElementById('scrape-live-badge');
+  const totalEl = document.getElementById('leads-scraped-value');
+  const pendingEl = document.getElementById('leads-pending-value');
+  const sentEl = document.getElementById('leads-sent-value');
+  const failedEl = document.getElementById('leads-failed-value');
+
+  function refreshCounts() {
+    fetch('/leads/counts').then(r => r.json()).then(c => {
+      if (c.error) return;
+      totalEl.textContent = c.total;
+      pendingEl.textContent = c.pending;
+      sentEl.textContent = c.sent;
+      failedEl.textContent = c.failed;
+    }).catch(() => {});
+  }
+
+  function poll() {
+    fetch('/scrape/status').then(r => r.json()).then(s => {
+      const running = s.state === 'running';
+      liveBadge.style.display = running ? 'inline' : 'none';
+      if (running) refreshCounts();
+    }).catch(() => {});
+  }
+
+  poll();
+  setInterval(poll, 4000);  // also catches a scrape that starts after this page loaded
 })();
 </script>
 

@@ -241,11 +241,12 @@ label.field-label {
   display: block; font-size: 11px; color: var(--muted); text-transform: uppercase;
   letter-spacing: 0.05em; margin-bottom: 8px; font-weight: 700;
 }
-input[type="password"], input[type="text"], input[type="email"] {
+input[type="password"], input[type="text"], input[type="email"], select {
   width: 100%; background: var(--shell); border: 1px solid var(--card-border); border-radius: var(--radius-sm);
   padding: 12px 14px; color: var(--text); font-size: 14px; font-family: inherit; margin-bottom: 16px;
 }
-input[type="password"]:focus, input[type="text"]:focus, input[type="email"]:focus {
+select { cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
+input[type="password"]:focus, input[type="text"]:focus, input[type="email"]:focus, select:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,138,61,0.18);
 }
 .field-errors { color: var(--danger); font-size: 12px; margin-top: -10px; margin-bottom: 10px; }

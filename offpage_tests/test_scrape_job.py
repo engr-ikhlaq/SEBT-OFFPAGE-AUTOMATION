@@ -23,7 +23,7 @@ class ScrapeJobStateTests(unittest.TestCase):
 
     def _use_fake_batch(self, found: int, final_state: str = "awaiting_decision"):
         """Fake _run_batch: pretends to find `found` leads, then sets final_state directly."""
-        def fake(keyword, username, is_owner):
+        def fake(keyword, username, is_owner, region=None):
             for i in range(1, found + 1):
                 scrape_job._on_lead(i, type("L", (), {"domain": f"lead{i}.test"})())
             with scrape_job._lock:
@@ -74,6 +74,36 @@ class ScrapeJobStateTests(unittest.TestCase):
         scrape_job.start("pept", "bob", True)
         self._wait_until_not_running()
         self.assertEqual(scrape_job.get_status()["username"], "bob")
+
+    def test_start_with_no_region_defaults_to_the_united_kingdom(self):
+        self._use_fake_batch(found=1)
+        scrape_job.start("pept", "alice", False)
+        self._wait_until_not_running()
+        self.assertEqual(scrape_job.get_status()["region"], "uk")
+
+    def test_an_unrecognized_region_falls_back_to_the_united_kingdom(self):
+        self._use_fake_batch(found=1)
+        scrape_job.start("pept", "alice", False, region="not-a-real-region")
+        self._wait_until_not_running()
+        self.assertEqual(scrape_job.get_status()["region"], "uk")
+
+    def test_a_chosen_region_is_recorded_and_carried_into_continue_scraping(self):
+        self._use_fake_batch(found=5)
+        scrape_job.start("pept", "alice", False, region="us")
+        self._wait_until_not_running()
+        self.assertEqual(scrape_job.get_status()["region"], "us")
+
+        received = {}
+
+        def fake_continue(keyword, username, is_owner, region=None):
+            received["region"] = region
+            with scrape_job._lock:
+                scrape_job._status.state = "finished"
+        scrape_job._run_batch = fake_continue
+
+        self.assertTrue(scrape_job.continue_scraping())
+        self._wait_until_not_running()
+        self.assertEqual(received["region"], "us")
 
     def test_start_refuses_while_a_previous_batch_is_awaiting_decision(self):
         """A fresh start() must not silently discard a paused batch - that
