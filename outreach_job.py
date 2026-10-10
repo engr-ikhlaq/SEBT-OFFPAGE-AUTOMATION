@@ -34,6 +34,7 @@ class OutreachStatus:
     # idle | running | finished | stopped | error
     state: str = "idle"
     kind: str = ""  # "outreach" or "followups" - which button started this run
+    username: str = ""
     total: int = 0
     done: int = 0
     sent_count: int = 0
@@ -69,7 +70,7 @@ def stop() -> None:
         _stop_requested = True
 
 
-def start(base_url: str, cfg, sender, backend) -> bool:
+def start(base_url: str, cfg, sender, backend, username: str) -> bool:
     """Starts sending to every pending lead in the background. False if a
     run is already in progress (one at a time, see module docstring)."""
     global _stop_requested
@@ -79,6 +80,7 @@ def start(base_url: str, cfg, sender, backend) -> bool:
         _stop_requested = False
         _status.state = "running"
         _status.kind = "outreach"
+        _status.username = username
         _status.total = 0
         _status.done = 0
         _status.sent_count = 0
@@ -86,12 +88,12 @@ def start(base_url: str, cfg, sender, backend) -> bool:
         _status.current_email = ""
         _status.error = ""
         _status.started_at = time.time()
-    thread = threading.Thread(target=_run_outreach, args=(base_url, cfg, sender, backend), daemon=True)
+    thread = threading.Thread(target=_run_outreach, args=(base_url, cfg, sender, backend, username), daemon=True)
     thread.start()
     return True
 
 
-def start_followups(base_url: str, cfg, sender) -> bool:
+def start_followups(base_url: str, cfg, sender, username: str) -> bool:
     """Same idea, for the "Follow-ups" button — send_due_followups() has no
     per-lead progress callback (it's normally a short list), so this just
     reports running/finished rather than a live done/total count."""
@@ -102,6 +104,7 @@ def start_followups(base_url: str, cfg, sender) -> bool:
         _stop_requested = False
         _status.state = "running"
         _status.kind = "followups"
+        _status.username = username
         _status.total = 0
         _status.done = 0
         _status.sent_count = 0
@@ -109,7 +112,7 @@ def start_followups(base_url: str, cfg, sender) -> bool:
         _status.current_email = ""
         _status.error = ""
         _status.started_at = time.time()
-    thread = threading.Thread(target=_run_followups, args=(base_url, cfg, sender), daemon=True)
+    thread = threading.Thread(target=_run_followups, args=(base_url, cfg, sender, username), daemon=True)
     thread.start()
     return True
 
@@ -130,10 +133,10 @@ def _should_stop() -> bool:
         return _stop_requested
 
 
-def _run_outreach(base_url: str, cfg, sender, backend) -> None:
+def _run_outreach(base_url: str, cfg, sender, backend, username: str) -> None:
     try:
         auto_outreach.send_pending_leads(
-            base_url, cfg, sender, backend, on_progress=_on_progress, should_stop=_should_stop,
+            base_url, cfg, sender, backend, username, on_progress=_on_progress, should_stop=_should_stop,
         )
     except Exception as exc:
         log.exception("Outreach run failed")
@@ -145,9 +148,9 @@ def _run_outreach(base_url: str, cfg, sender, backend) -> None:
         _status.state = "stopped" if _stop_requested else "finished"
 
 
-def _run_followups(base_url: str, cfg, sender) -> None:
+def _run_followups(base_url: str, cfg, sender, username: str) -> None:
     try:
-        result = auto_outreach.send_due_followups(base_url, cfg, sender)
+        result = auto_outreach.send_due_followups(base_url, cfg, sender, username)
     except Exception as exc:
         log.exception("Follow-up run failed")
         with _lock:

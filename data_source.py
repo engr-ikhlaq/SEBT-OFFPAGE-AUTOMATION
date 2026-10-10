@@ -26,6 +26,7 @@ there's exactly one place that makes this decision.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import google_oauth
@@ -106,6 +107,22 @@ def admin_sheet_configured() -> bool:
     return sheets_source.is_configured()
 
 
+def service_account_sheets_configured() -> bool:
+    """True if GOOGLE_SERVICE_ACCOUNT_FILE is set up, so a user can connect
+    their own Sheet (see /connect/sheet) without needing OAuth Cloud
+    Console setup, which only the owner can do."""
+    return sheets_source.service_account_email() is not None
+
+
+def open_worksheet_by_id(sheet_id: str, worksheet_name: str | None):
+    """Opens any Sheet (not necessarily the admin's) the service account
+    has Editor access to — used both by for_user() for a user's own
+    connected Sheet, and by /connect/sheet to validate one before saving it."""
+    from offpage.sheets import open_worksheet
+    creds_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "service_account.json")
+    return open_worksheet(Path(creds_file), sheet_id, worksheet_name or None)
+
+
 def for_user(username: str, is_owner: bool):
     """The backend THIS user's leads live in — see module docstring for
     the priority order. Returns an object with read_recipients(),
@@ -117,6 +134,11 @@ def for_user(username: str, is_owner: bool):
         creds = google_oauth.credentials_from_row(account)
         ws = google_oauth.open_user_worksheet(creds, account["sheet_id"])
         return _UserSheetBackend(SheetStore(ws), f"your connected Sheet ({account['google_email']})")
+
+    user_sheet = db.get_user_sheet(username)
+    if user_sheet:
+        ws = open_worksheet_by_id(user_sheet["sheet_id"], user_sheet.get("worksheet_name"))
+        return _UserSheetBackend(SheetStore(ws), "your connected Sheet")
 
     if is_owner and admin_sheet_configured():
         return _SheetsSourceBackend("the shared Google Sheet")

@@ -31,8 +31,10 @@ import os
 import json
 import logging
 import math
+import re
 from pathlib import Path
 
+import gspread
 from flask import Flask, request, render_template, redirect, url_for, session, flash
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
@@ -262,6 +264,10 @@ def _google_account_context() -> dict:
         "manual_gmail_form": ManualGmailForm(),
         "data_backend_name": backend.name,
         "scraped_leads": scraped_leads,
+        "user_sheet": db.get_user_sheet(username),
+        "service_account_sheets_configured": data_source.service_account_sheets_configured(),
+        "service_account_email": sheets_source.service_account_email(),
+        "connect_sheet_form": ConnectSheetForm(),
     }
 
 
@@ -320,6 +326,20 @@ class LoginForm(FlaskForm):
 class ManualGmailForm(FlaskForm):
     email = StringField("Gmail address", validators=[DataRequired()])
     app_password = PasswordField("App Password", validators=[DataRequired()])
+
+
+class ConnectSheetForm(FlaskForm):
+    sheet_id = StringField("Sheet ID or URL", validators=[DataRequired()])
+    worksheet_name = StringField("Worksheet name (optional)", validators=[Optional()])
+
+
+def _extract_sheet_id(raw: str) -> str:
+    """Accepts either a bare Sheet ID or a full Sheets URL (the part
+    between /d/ and the next /) and returns just the ID either way, since
+    pasting the whole URL from the address bar is the easier thing to do."""
+    raw = raw.strip()
+    match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", raw)
+    return match.group(1) if match else raw
 
 
 class ForgotPasswordForm(FlaskForm):
@@ -692,6 +712,66 @@ def connect_gmail_manual_disconnect():
     return redirect(url_for("index"))
 
 
+@app.route("/connect/sheet", methods=["POST"])
+def connect_sheet():
+    """The no-OAuth-setup-needed way to get a personal Sheet: paste in a
+    Sheet (shared as Editor with this app's service account) instead of
+    going through Google Cloud Console OAuth, which only the owner can set
+    up — see data_source.open_worksheet_by_id / sheets_source.service_account_email."""
+    if not require_login():
+        return redirect(url_for("login"))
+    if not data_source.service_account_sheets_configured():
+        flash("Connecting a Sheet isn't set up yet — ask whoever runs this app to add "
+              "GOOGLE_SERVICE_ACCOUNT_FILE to .env.")
+        return redirect(url_for("index"))
+
+    form = ConnectSheetForm()
+    if not form.validate_on_submit():
+        flash("Enter a Google Sheet ID or URL.")
+        return redirect(url_for("index"))
+
+    sheet_id = _extract_sheet_id(form.sheet_id.data)
+    worksheet_name = (form.worksheet_name.data or "").strip() or None
+
+    try:
+        ws = data_source.open_worksheet_by_id(sheet_id, worksheet_name)
+        ws.row_values(1)  # forces a real API call now, so a bad id/permission shows up here, not on first use
+    except gspread.exceptions.SpreadsheetNotFound:
+        flash("Could not find that Sheet — double-check the ID or URL.")
+        return redirect(url_for("index"))
+    except gspread.exceptions.WorksheetNotFound:
+        flash(f"That Sheet has no worksheet named '{worksheet_name}'.")
+        return redirect(url_for("index"))
+    except gspread.exceptions.APIError as e:
+        email = sheets_source.service_account_email()
+        flash(f"Could not open that Sheet ({e}). Make sure it's shared as Editor with {email}.")
+        return redirect(url_for("index"))
+    except Exception as e:
+        flash(f"Could not open that Sheet: {e}")
+        return redirect(url_for("index"))
+
+    db.save_user_sheet(session["username"], sheet_id, worksheet_name)
+
+    try:
+        backend = data_source.for_user(session["username"], require_owner())
+        moved = data_source.migrate_to_sheet(session["username"], backend)
+    except Exception:
+        log.exception("Could not migrate local leads into the newly connected Sheet")
+        moved = 0
+
+    flash("Connected your Google Sheet." + (f" Moved {moved} existing lead(s) into it." if moved else ""))
+    return redirect(url_for("index"))
+
+
+@app.route("/connect/sheet/disconnect", methods=["POST"])
+def connect_sheet_disconnect():
+    if not require_login():
+        return redirect(url_for("login"))
+    db.delete_user_sheet(session["username"])
+    flash("Disconnected your Google Sheet. New leads will go to your local file instead.")
+    return redirect(url_for("index"))
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if not require_login():
@@ -768,6 +848,7 @@ def index():
             message=form.message.data,
             link_url=form.link_url.data,
             link_text=form.link_text.data,
+            username=session["username"],
         )
         tokens = {}
         for email in to_send:
@@ -865,11 +946,12 @@ def dashboard():
     if not require_login():
         return redirect(url_for("login"))
 
-    overview = db.get_overview_stats()
-    campaigns = db.get_campaigns_summary()
-    timeseries = db.get_events_timeseries()
-    sent_timeseries = db.get_sent_timeseries()
-    recent_activity = db.get_recent_activity()
+    username = session["username"]
+    overview = db.get_overview_stats(username)
+    campaigns = db.get_campaigns_summary(username)
+    timeseries = db.get_events_timeseries(username)
+    sent_timeseries = db.get_sent_timeseries(username)
+    recent_activity = db.get_recent_activity(username)
 
     sent = overview.get("total_sent") or 0
     reply_rate = round((overview.get("total_replies") or 0) / sent * 100) if sent else 0
@@ -899,8 +981,8 @@ def dashboard():
         needle_y=needle_y,
         recent_activity=recent_activity,
         imap_configured=_any_imap_configured(),
-        lead_journeys=db.get_lead_journeys(),
-        unseen_replies=db.get_unseen_reply_count(),
+        lead_journeys=db.get_lead_journeys(username),
+        unseen_replies=db.get_unseen_reply_count(username),
         lead_counts=lead_counts,
         data_backend_name=backend.name,
         is_owner=require_owner(),
@@ -953,7 +1035,7 @@ def leads_recent():
 def mark_replies_seen():
     if not require_login():
         return redirect(url_for("login"))
-    db.mark_all_replies_seen()
+    db.mark_all_replies_seen(session["username"])
     return redirect(url_for("dashboard"))
 
 
@@ -964,7 +1046,7 @@ def delete_lead_journey(recipient_id):
     (see /leads/clear for that)."""
     if not require_login():
         return redirect(url_for("login"))
-    if db.delete_lead_journey(recipient_id):
+    if db.delete_lead_journey(recipient_id, session["username"]):
         flash("Removed from the outreach list.")
     else:
         flash("Could not find that lead.")
@@ -985,7 +1067,7 @@ def run_outreach():
         backend = data_source.for_user(session["username"], require_owner())
     except Exception as e:
         return {"error": str(e)}, 500
-    if not outreach_job.start(get_public_base_url(), cfg, sender, backend):
+    if not outreach_job.start(get_public_base_url(), cfg, sender, backend, session["username"]):
         return {"error": "An outreach run is already in progress."}, 409
     return outreach_job.get_status()
 
@@ -999,7 +1081,7 @@ def run_followups():
         cfg, sender = sender_for_current_user()
     except Exception as e:
         return {"error": str(e)}, 500
-    if not outreach_job.start_followups(get_public_base_url(), cfg, sender):
+    if not outreach_job.start_followups(get_public_base_url(), cfg, sender, session["username"]):
         return {"error": "A run is already in progress."}, 409
     return outreach_job.get_status()
 
@@ -1008,7 +1090,7 @@ def run_followups():
 def outreach_status():
     if (refusal := _require_login_json()) is not None:
         return refusal
-    return outreach_job.get_status()
+    return _status_for_viewer(outreach_job.get_status())
 
 
 @app.route("/outreach/stop", methods=["POST"])
@@ -1031,11 +1113,27 @@ def _require_login_json():
     return None if require_login() else ({"error": "login required"}, 401)
 
 
+def _status_for_viewer(status: dict) -> dict:
+    """scrape_job/outreach_job each track exactly one run at a time,
+    process-wide — necessary since there's only one real Chrome window /
+    one shared sent-count to update. But that means whatever the LAST run
+    left behind (possibly another user's, possibly from minutes or days
+    ago) would otherwise show up as "status" on the very next person's
+    dashboard, regardless of who they are. Only the user who actually
+    owns this status gets to see it; everyone else sees a plain idle
+    state, same as if nothing had ever run."""
+    if status.get("username") and status["username"] != session.get("username"):
+        idle = {**status}
+        idle["state"] = "idle"
+        return idle
+    return status
+
+
 @app.route("/scrape/status")
 def scrape_status():
     if (refusal := _require_login_json()) is not None:
         return refusal
-    return scrape_job.get_status()
+    return _status_for_viewer(scrape_job.get_status())
 
 
 @app.route("/scrape/start", methods=["POST"])
@@ -1075,7 +1173,7 @@ def scrape_send_now():
     try:
         cfg, sender = sender_for_current_user()
         backend = data_source.for_user(session["username"], require_owner())
-        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender, backend)
+        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender, backend, session["username"])
     except Exception as exc:
         return {"error": str(exc)}, 500
     scrape_job.stop()  # don't let a later "continue" click resume after this

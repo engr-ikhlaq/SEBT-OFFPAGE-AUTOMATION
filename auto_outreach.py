@@ -163,7 +163,7 @@ def _render_email_html(body_html: str, *, pixel_url_template: str, unsubscribe_u
     )
 
 
-def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit: int | None = None,
+def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, username: str, limit: int | None = None,
                         on_progress=None, should_stop=None) -> dict:
     """Sends the outreach email to every unsent, valid-email lead in
     `backend` — the caller's own data_source.for_user() result, so this
@@ -208,6 +208,7 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
         campaign_id = db.create_campaign(
             subject=personalize(subject_template, {"domain": domain}),
             message="(auto-outreach)", link_url=url, link_text="",
+            username=username,
         )
         _, token = db.create_recipient(
             campaign_id, email, kind="outreach", sheet_row=row, lead_domain=domain, lead_url=url,
@@ -265,14 +266,18 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
     return summary
 
 
-def send_due_followups(base_url: str, cfg: MailerConfig, sender, hours: int = FOLLOW_UP_AFTER_HOURS) -> dict:
+def send_due_followups(base_url: str, cfg: MailerConfig, sender, username: str,
+                        hours: int = FOLLOW_UP_AFTER_HOURS) -> dict:
     """Sends one follow-up to each outreach lead that's gone unanswered for `hours`.
 
     cfg/sender: the sending identity to use — see module docstring.
+    username: whose own leads to follow up on — without this scope, one
+        user's follow-up run could email leads a DIFFERENT user originally
+        contacted (see db.get_recipients_due_for_followup).
     """
     from link_paths import open_pixel_url, unsubscribe_url as build_unsub_url
 
-    due = db.get_recipients_due_for_followup(hours=hours)
+    due = db.get_recipients_due_for_followup(username, hours=hours)
     summary = {"sent": [], "failed": []}
 
     for recipient in due:

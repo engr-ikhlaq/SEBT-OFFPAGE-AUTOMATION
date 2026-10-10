@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS lead_dashboard_clears (
     cleared_at      TEXT NOT NULL
 );
 
+-- A user's own Google Sheet, connected WITHOUT OAuth - they paste in a
+-- Sheet ID/URL and share Editor access with this app's service account
+-- (see GOOGLE_SERVICE_ACCOUNT_FILE) instead of needing Cloud Console OAuth
+-- setup, which a non-owner user has no way to do themselves. See app.py's
+-- /connect/sheet and sheets_source.service_account_email(). If a user has
+-- BOTH this and an OAuth-connected Sheet, OAuth wins (see data_source.for_user).
+CREATE TABLE IF NOT EXISTS user_sheets (
+    username        TEXT PRIMARY KEY,
+    sheet_id        TEXT NOT NULL,
+    worksheet_name  TEXT,
+    connected_at    TEXT NOT NULL
+);
+
 -- Self-service "forgot password" (see app.py's /forgot-password,
 -- /reset-password/<token>). A token is single-use and short-lived; the
 -- email it's sent to is never stored here - it's looked up fresh from
@@ -144,6 +157,13 @@ _COLUMN_MIGRATIONS = (
     # in, since that's whichever Gmail the sender had connected at the
     # time, not necessarily the shared SMTP_* config (see check_for_replies).
     "ALTER TABLE recipients ADD COLUMN sender_email TEXT",
+    # Who sent this campaign - without it, every dashboard stat/journey
+    # query was global across all app users, so a brand-new user's
+    # dashboard showed the owner's entire send history. NULL means "sent
+    # before this column existed" - init_db() backfills those to the owner
+    # (see _backfill_campaign_usernames) so that history stays attributed
+    # to whoever actually sent it instead of silently vanishing.
+    "ALTER TABLE campaigns ADD COLUMN username TEXT",
 )
 
 
@@ -172,14 +192,25 @@ def init_db():
             except sqlite3.OperationalError as exc:
                 if "duplicate column" not in str(exc).lower():
                     raise
+        _backfill_campaign_usernames(conn)
 
 
-def create_campaign(subject, message, link_url, link_text) -> int:
+def _backfill_campaign_usernames(conn) -> None:
+    """One-time fixup for campaigns created before campaigns.username
+    existed: attribute them to the owner account, so pre-existing send
+    history stays visible on the owner's dashboard instead of disappearing
+    (or, worse, staying visible to everyone)."""
+    owner = conn.execute("SELECT username FROM users WHERE role='owner' LIMIT 1").fetchone()
+    if owner:
+        conn.execute("UPDATE campaigns SET username=? WHERE username IS NULL", (owner["username"],))
+
+
+def create_campaign(subject, message, link_url, link_text, username: str | None = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO campaigns (subject, message, link_url, link_text, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (subject, message, link_url, link_text, now_iso()),
+            "INSERT INTO campaigns (subject, message, link_url, link_text, created_at, username) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (subject, message, link_url, link_text, now_iso(), username),
         )
         return cur.lastrowid
 
@@ -301,9 +332,11 @@ def mark_unsubscribed(email: str):
 # Dashboard aggregate queries
 # ---------------------------------------------------------------------------
 
-def get_overview_stats():
+def get_overview_stats(username: str | None = None):
     with get_conn() as conn:
-        totals = conn.execute("""
+        scope = "WHERE campaign_id IN (SELECT id FROM campaigns WHERE username=?)" if username is not None else ""
+        params = (username,) if username is not None else ()
+        totals = conn.execute(f"""
             SELECT
                 COUNT(*)                                    AS total_recipients,
                 SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END)          AS total_sent,
@@ -315,17 +348,21 @@ def get_overview_stats():
                 SUM(open_count)  AS total_open_events,
                 SUM(click_count) AS total_click_events
             FROM recipients
-        """).fetchone()
-        campaign_count = conn.execute("SELECT COUNT(*) c FROM campaigns").fetchone()["c"]
+            {scope}
+        """, params).fetchone()
+        campaign_scope = "WHERE username=?" if username is not None else ""
+        campaign_count = conn.execute(f"SELECT COUNT(*) c FROM campaigns {campaign_scope}", params).fetchone()["c"]
         return {**dict(totals), "campaign_count": campaign_count}
 
 
-def get_campaigns_summary():
+def get_campaigns_summary(username: str | None = None):
     """Manually-composed campaigns only — auto-outreach leads get their own
     per-lead journey view (get_lead_journeys) instead of cluttering this
     table with one row per lead."""
     with get_conn() as conn:
-        rows = conn.execute("""
+        owner_scope = "AND c.username=?" if username is not None else ""
+        params = (username,) if username is not None else ()
+        rows = conn.execute(f"""
             SELECT
                 c.id, c.subject, c.created_at, c.sent_count, c.failed_count,
                 c.invalid_count, c.skipped_count,
@@ -335,9 +372,10 @@ def get_campaigns_summary():
             FROM campaigns c
             LEFT JOIN recipients r ON r.campaign_id = c.id
             WHERE c.id NOT IN (SELECT DISTINCT campaign_id FROM recipients WHERE kind='outreach')
+            {owner_scope}
             GROUP BY c.id
             ORDER BY c.id DESC
-        """).fetchall()
+        """, params).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -352,43 +390,53 @@ def get_campaign_detail(campaign_id: int):
         return {"campaign": dict(campaign), "recipients": [dict(r) for r in recipients]}
 
 
-def get_sent_timeseries(days: int = 7):
+def get_sent_timeseries(username: str | None = None, days: int = 7):
     """Sends per day for the last N days, oldest first — for the dashboard sparklines."""
     with get_conn() as conn:
-        rows = conn.execute("""
+        scope = "AND campaign_id IN (SELECT id FROM campaigns WHERE username=?)" if username is not None else ""
+        params = (username, days) if username is not None else (days,)
+        rows = conn.execute(f"""
             SELECT substr(sent_at, 1, 10) AS day, COUNT(*) AS n
             FROM recipients
             WHERE status='sent' AND sent_at IS NOT NULL
+            {scope}
             GROUP BY day
             ORDER BY day DESC
             LIMIT ?
-        """, (days,)).fetchall()
+        """, params).fetchall()
         return list(reversed([dict(r) for r in rows]))
 
 
-def get_events_timeseries(days: int = 14):
+def get_events_timeseries(username: str | None = None, days: int = 14):
     """Opens + clicks per day for the last N days, for the trend chart."""
     with get_conn() as conn:
-        rows = conn.execute("""
-            SELECT substr(occurred_at, 1, 10) AS day, event_type, COUNT(*) AS n
-            FROM events
-            WHERE event_type IN ('open', 'click')
-            GROUP BY day, event_type
+        scope = "AND r.campaign_id IN (SELECT id FROM campaigns WHERE username=?)" if username is not None else ""
+        params = (username,) if username is not None else ()
+        rows = conn.execute(f"""
+            SELECT substr(e.occurred_at, 1, 10) AS day, e.event_type, COUNT(*) AS n
+            FROM events e
+            JOIN recipients r ON r.id = e.recipient_id
+            WHERE e.event_type IN ('open', 'click')
+            {scope}
+            GROUP BY day, e.event_type
             ORDER BY day
-        """).fetchall()
+        """, params).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_recent_activity(limit: int = 25):
+def get_recent_activity(username: str | None = None, limit: int = 25):
     with get_conn() as conn:
-        rows = conn.execute("""
+        scope = "WHERE c.username=?" if username is not None else ""
+        params = (username, limit) if username is not None else (limit,)
+        rows = conn.execute(f"""
             SELECT e.event_type, e.occurred_at, r.email, c.subject, c.id AS campaign_id
             FROM events e
             JOIN recipients r ON r.id = e.recipient_id
             JOIN campaigns c ON c.id = r.campaign_id
+            {scope}
             ORDER BY e.occurred_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """, params).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -413,8 +461,12 @@ def get_all_recipients_for_reply_check():
 # Outreach leads + follow-ups
 # ---------------------------------------------------------------------------
 
-def get_recipients_due_for_followup(hours: int = 24):
-    """Outreach leads sent more than `hours` ago, with no reply and no follow-up yet."""
+def get_recipients_due_for_followup(username: str, hours: int = 24):
+    """Outreach leads sent more than `hours` ago, with no reply and no
+    follow-up yet - scoped to `username`'s own campaigns. Without this
+    scope, clicking "Follow-ups" as one user would send follow-up emails
+    (from that user's own mailbox) to leads a DIFFERENT user originally
+    contacted - a real cross-account leak, not just a display bug."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     with get_conn() as conn:
         rows = conn.execute("""
@@ -424,7 +476,8 @@ def get_recipients_due_for_followup(hours: int = 24):
               AND replied_at IS NULL AND followed_up_at IS NULL
               AND unsubscribed_at IS NULL
               AND sent_at <= ?
-        """, (cutoff,)).fetchall()
+              AND campaign_id IN (SELECT id FROM campaigns WHERE username=?)
+        """, (cutoff, username)).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -436,32 +489,40 @@ def mark_followed_up(recipient_id: int):
         )
 
 
-def get_lead_journeys(limit: int = 100):
+def get_lead_journeys(username: str | None = None, limit: int = 100):
     """Outreach leads with their current stage, newest first — for the dashboard timeline."""
     with get_conn() as conn:
-        rows = conn.execute("""
+        scope = "AND campaign_id IN (SELECT id FROM campaigns WHERE username=?)" if username is not None else ""
+        params = (username, limit) if username is not None else (limit,)
+        rows = conn.execute(f"""
             SELECT id, email, lead_domain, status, error, sent_at, open_count,
                    first_opened_at, click_count, first_clicked_at, replied_at,
                    followed_up_at, unsubscribed_at
             FROM recipients
             WHERE kind='outreach'
+            {scope}
             ORDER BY id DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """, params).fetchall()
         return [dict(r) for r in rows]
 
 
-def delete_lead_journey(recipient_id: int) -> bool:
+def delete_lead_journey(recipient_id: int, username: str | None = None) -> bool:
     """Removes one outreach lead from the dashboard's journey list: the
     recipient row, its open/click events, and - since auto_outreach.py
     creates a fresh campaign for each lead it sends to - that campaign
     too, if this was its only recipient. This only ever touches this
     app's own tracking.db; it has no effect on the Sheet/local lead data
     itself (see data_source.py), which is a separate store entirely.
-    Returns False if no such outreach recipient exists."""
+    When username is given, only a lead from one of THAT user's own
+    campaigns can be deleted - otherwise any logged-in user could remove
+    another user's journey rows by guessing/incrementing the id.
+    Returns False if no such outreach recipient exists (or belongs to someone else)."""
     with get_conn() as conn:
+        scope = "AND campaign_id IN (SELECT id FROM campaigns WHERE username=?)" if username is not None else ""
+        params = (recipient_id, username) if username is not None else (recipient_id,)
         row = conn.execute(
-            "SELECT campaign_id FROM recipients WHERE id=? AND kind='outreach'", (recipient_id,)
+            f"SELECT campaign_id FROM recipients WHERE id=? AND kind='outreach' {scope}", params
         ).fetchone()
         if not row:
             return False
@@ -476,19 +537,24 @@ def delete_lead_journey(recipient_id: int) -> bool:
         return True
 
 
-def get_unseen_reply_count() -> int:
+def get_unseen_reply_count(username: str | None = None) -> int:
     with get_conn() as conn:
+        scope = "AND campaign_id IN (SELECT id FROM campaigns WHERE username=?)" if username is not None else ""
+        params = (username,) if username is not None else ()
         row = conn.execute(
-            "SELECT COUNT(*) c FROM recipients WHERE replied_at IS NOT NULL AND reply_seen_at IS NULL"
+            f"SELECT COUNT(*) c FROM recipients WHERE replied_at IS NOT NULL AND reply_seen_at IS NULL {scope}",
+            params,
         ).fetchone()
         return row["c"]
 
 
-def mark_all_replies_seen():
+def mark_all_replies_seen(username: str | None = None):
     with get_conn() as conn:
+        scope = "AND campaign_id IN (SELECT id FROM campaigns WHERE username=?)" if username is not None else ""
+        params = (username,) if username is not None else ()
         conn.execute(
-            "UPDATE recipients SET reply_seen_at=? WHERE replied_at IS NOT NULL AND reply_seen_at IS NULL",
-            (now_iso(),),
+            f"UPDATE recipients SET reply_seen_at=? WHERE replied_at IS NOT NULL AND reply_seen_at IS NULL {scope}",
+            (now_iso(), *params),
         )
 
 
@@ -579,6 +645,7 @@ def delete_user(user_id: int) -> bool:
         if row:
             conn.execute("DELETE FROM google_accounts WHERE username=?", (row["username"],))
             conn.execute("DELETE FROM manual_email_accounts WHERE username=?", (row["username"],))
+            conn.execute("DELETE FROM user_sheets WHERE username=?", (row["username"],))
         return True
 
 
@@ -661,6 +728,33 @@ def find_username_by_connected_email(email: str) -> str | None:
             (email, email),
         ).fetchone()
         return row["username"] if row else None
+
+
+# ---------------------------------------------------------------------------
+# A user's own Google Sheet, connected without OAuth (see schema comment above)
+# ---------------------------------------------------------------------------
+
+def save_user_sheet(username: str, sheet_id: str, worksheet_name: str | None) -> None:
+    """Upsert: connecting again just replaces the stored sheet/worksheet."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO user_sheets (username, sheet_id, worksheet_name, connected_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(username) DO UPDATE SET "
+            "  sheet_id=excluded.sheet_id, worksheet_name=excluded.worksheet_name, connected_at=excluded.connected_at",
+            (username, sheet_id, worksheet_name, now_iso()),
+        )
+
+
+def get_user_sheet(username: str):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM user_sheets WHERE username=?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def delete_user_sheet(username: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM user_sheets WHERE username=?", (username,))
 
 
 # ---------------------------------------------------------------------------

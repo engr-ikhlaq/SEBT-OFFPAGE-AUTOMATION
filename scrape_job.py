@@ -59,10 +59,13 @@ USER_AGENT = (
 
 # Chrome always runs on THIS machine (wherever app.py is running) - a web
 # request can't open a window on the browser making it, no matter who's
-# logged in or where they're connecting from. Headless means no window
-# pops up for anyone, which is what every real deployment wants anyway;
-# set SCRAPE_HEADLESS=false in .env to watch it locally while debugging.
-_HEADLESS = os.environ.get("SCRAPE_HEADLESS", "true").strip().lower() not in ("false", "0", "no")
+# logged in or where they're connecting from. Visible by default so
+# whoever is physically at this machine can see a Google CAPTCHA if one
+# comes up and solve it by hand - that's the only real fix for one, and
+# this app makes no attempt to bypass a CAPTCHA automatically. Set
+# SCRAPE_HEADLESS=true in .env for an unattended server with no one
+# around to see the window anyway.
+_HEADLESS = os.environ.get("SCRAPE_HEADLESS", "false").strip().lower() not in ("false", "0", "no")
 
 
 @dataclasses.dataclass

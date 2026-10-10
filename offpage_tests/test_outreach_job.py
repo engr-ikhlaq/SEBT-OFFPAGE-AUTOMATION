@@ -25,7 +25,7 @@ class OutreachJobStateTests(unittest.TestCase):
     def _use_fake_send(self, total: int, sent: int):
         """Fake send_pending_leads: reports progress for `total` leads,
         the first `sent` as sent and the rest as failed."""
-        def fake(base_url, cfg, sender, backend, on_progress=None, should_stop=None, limit=None):
+        def fake(base_url, cfg, sender, backend, username, on_progress=None, should_stop=None, limit=None):
             for i in range(1, total + 1):
                 if should_stop is not None and should_stop():
                     break
@@ -39,11 +39,11 @@ class OutreachJobStateTests(unittest.TestCase):
     def test_start_refuses_while_already_running(self):
         self._use_fake_send(total=0, sent=0)
         outreach_job._status.state = "running"
-        self.assertFalse(outreach_job.start("https://x", None, None, None))
+        self.assertFalse(outreach_job.start("https://x", None, None, None, "alice"))
 
     def test_start_then_wait_reaches_finished_with_counts(self):
         self._use_fake_send(total=5, sent=3)
-        self.assertTrue(outreach_job.start("https://x", None, None, None))
+        self.assertTrue(outreach_job.start("https://x", None, None, None, "alice"))
         self._wait_until_not_running()
         status = outreach_job.get_status()
         self.assertEqual(status["state"], "finished")
@@ -59,7 +59,7 @@ class OutreachJobStateTests(unittest.TestCase):
         item1_done = threading.Event()
         go_ahead = threading.Event()
 
-        def fake(base_url, cfg, sender, backend, on_progress=None, should_stop=None, limit=None):
+        def fake(base_url, cfg, sender, backend, username, on_progress=None, should_stop=None, limit=None):
             for i in range(1, 11):
                 if should_stop is not None and should_stop():
                     break
@@ -71,7 +71,7 @@ class OutreachJobStateTests(unittest.TestCase):
             return {"sent": [], "failed": [], "skipped": []}
         outreach_job.auto_outreach.send_pending_leads = fake
 
-        self.assertTrue(outreach_job.start("https://x", None, None, None))
+        self.assertTrue(outreach_job.start("https://x", None, None, None, "alice"))
         self.assertTrue(item1_done.wait(timeout=2))
         outreach_job.stop()
         go_ahead.set()  # fake resumes, sees should_stop() == True now, and breaks
@@ -82,22 +82,22 @@ class OutreachJobStateTests(unittest.TestCase):
         self.assertEqual(status["done"], 1)  # exactly one item processed before stopping
 
     def test_an_exception_is_reported_as_error_not_left_hanging(self):
-        def fake(base_url, cfg, sender, backend, on_progress=None, should_stop=None, limit=None):
+        def fake(base_url, cfg, sender, backend, username, on_progress=None, should_stop=None, limit=None):
             raise RuntimeError("smtp exploded")
         outreach_job.auto_outreach.send_pending_leads = fake
 
-        outreach_job.start("https://x", None, None, None)
+        outreach_job.start("https://x", None, None, None, "alice")
         self._wait_until_not_running()
         status = outreach_job.get_status()
         self.assertEqual(status["state"], "error")
         self.assertIn("smtp exploded", status["error"])
 
     def test_followups_run_reports_finished_with_counts(self):
-        def fake(base_url, cfg, sender, hours=24):
+        def fake(base_url, cfg, sender, username, hours=24):
             return {"sent": ["a@x.test", "b@x.test"], "failed": [("c@x.test", "boom")]}
         outreach_job.auto_outreach.send_due_followups = fake
 
-        self.assertTrue(outreach_job.start_followups("https://x", None, None))
+        self.assertTrue(outreach_job.start_followups("https://x", None, None, "alice"))
         self._wait_until_not_running()
         status = outreach_job.get_status()
         self.assertEqual(status["state"], "finished")
@@ -110,12 +110,12 @@ class OutreachJobStateTests(unittest.TestCase):
 
         release = threading.Event()
 
-        def fake(base_url, cfg, sender, backend, on_progress=None, should_stop=None, limit=None):
+        def fake(base_url, cfg, sender, backend, username, on_progress=None, should_stop=None, limit=None):
             release.wait(timeout=2)
             return {"sent": [], "failed": [], "skipped": []}
         outreach_job.auto_outreach.send_pending_leads = fake
 
-        outreach_job.start("https://x", None, None, None)
+        outreach_job.start("https://x", None, None, None, "alice")
         time.sleep(0.05)
         status = outreach_job.get_status()
         self.assertEqual(status["state"], "running")

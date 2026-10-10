@@ -21,6 +21,7 @@ Setup required (see README / chat walkthrough):
          GOOGLE_WORKSHEET_NAME=Sheet1
 """
 
+import json
 import os
 from datetime import datetime, timezone
 from typing import Optional
@@ -42,6 +43,21 @@ def is_configured() -> bool:
         os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
         and os.environ.get("GOOGLE_SHEET_ID")
     )
+
+
+def service_account_email() -> str | None:
+    """The service account's own address - whoever wants to connect their
+    own Sheet (without OAuth, see /connect/sheet) needs to share it with
+    THIS email as an Editor, same as the admin's shared Sheet already is.
+    None if GOOGLE_SERVICE_ACCOUNT_FILE isn't set or doesn't exist."""
+    creds_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
+    if not creds_file or not os.path.exists(creds_file):
+        return None
+    try:
+        with open(creds_file, "r", encoding="utf-8") as f:
+            return json.load(f).get("client_email")
+    except (OSError, ValueError):
+        return None
 
 
 def _get_worksheet():

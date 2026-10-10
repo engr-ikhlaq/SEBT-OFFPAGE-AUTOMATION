@@ -42,7 +42,7 @@ class FakeDb:
     def mark_recipient_result(self, email, campaign_id, status, **kwargs):
         self.recipient_results.append((email, status))
 
-    def get_recipients_due_for_followup(self, hours):
+    def get_recipients_due_for_followup(self, username, hours):
         return [{
             "id": 1, "campaign_id": 1, "email": "lead@site.test",
             "message_id": "<orig@mail>", "sent_at": "...",
@@ -96,7 +96,7 @@ class OutreachUsesInjectedIdentityTests(unittest.TestCase):
 
         cfg = _cfg("alice")
         sender = RecordingSender()
-        result = auto_outreach.send_pending_leads("https://app.test", cfg, sender, backend)
+        result = auto_outreach.send_pending_leads("https://app.test", cfg, sender, backend, "alice")
 
         self.assertEqual(result["sent"], ["lead@site.test"])
         self.assertEqual(sender.enter_count, 1)
@@ -109,12 +109,12 @@ class OutreachUsesInjectedIdentityTests(unittest.TestCase):
         auto_outreach.db = FakeDb()
         backend_a = FakeSheetsSource(leads)
         sender_a = RecordingSender()
-        auto_outreach.send_pending_leads("https://app.test", _cfg("alice"), sender_a, backend_a)
+        auto_outreach.send_pending_leads("https://app.test", _cfg("alice"), sender_a, backend_a, "alice")
 
         auto_outreach.db = FakeDb()
         backend_b = FakeSheetsSource(leads)
         sender_b = RecordingSender()
-        auto_outreach.send_pending_leads("https://app.test", _cfg("bob"), sender_b, backend_b)
+        auto_outreach.send_pending_leads("https://app.test", _cfg("bob"), sender_b, backend_b, "bob")
 
         self.assertIn("alice", sender_a.sent_as[0])
         self.assertIn("bob", sender_b.sent_as[0])
@@ -126,7 +126,7 @@ class OutreachUsesInjectedIdentityTests(unittest.TestCase):
     def test_send_due_followups_also_uses_the_passed_in_identity(self):
         auto_outreach.db = FakeDb()
         sender = RecordingSender()
-        result = auto_outreach.send_due_followups("https://app.test", _cfg("alice"), sender)
+        result = auto_outreach.send_due_followups("https://app.test", _cfg("alice"), sender, "alice")
 
         self.assertEqual(result["sent"], ["lead@site.test"])
         self.assertIn("alice", sender.sent_as[0])
