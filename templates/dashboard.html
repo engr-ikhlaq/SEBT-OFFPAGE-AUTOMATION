@@ -196,6 +196,11 @@
                         <div class="who">
                             <div class="domain">{{ lead.lead_domain or '—' }}</div>
                             <div class="email">{{ lead.email }}</div>
+                            {% if lead.status == 'sent' and lead.sent_at %}
+                            <div class="sent-status success">{{ icon_check(11) }} Email sent successfully — {{ lead.sent_at[:19].replace('T', ' ') }} UTC</div>
+                            {% elif lead.status == 'failed' %}
+                            <div class="sent-status failed">{{ icon_x(11) }} Send failed{% if lead.error %} — {{ lead.error }}{% endif %}</div>
+                            {% endif %}
                         </div>
                         <div class="journey-steps">
                             <span class="journey-step {{ 'done' if lead.status == 'sent' else 'failed' if lead.status == 'failed' else '' }}">

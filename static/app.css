@@ -8,7 +8,7 @@
   --card: #ffffff;
   --card-border: #eceef2;
   --text: #1c1d22;
-  --muted: #8b8d98;
+  --muted: #5c5e68;
   --accent: #ff8a3d;
   --accent-2: #22c55e;
   --accent-3: #f59e0b;
@@ -203,9 +203,12 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- lead journey timeline ---- */
 .journey-list { display: flex; flex-direction: column; gap: 12px; max-height: 480px; overflow-y: auto; }
 .journey-row { display: flex; align-items: center; gap: 14px; font-size: 13px; padding: 10px; border-radius: var(--radius-sm); background: var(--shell); }
-.journey-row .who { min-width: 170px; }
+.journey-row .who { min-width: 170px; max-width: 260px; }
 .journey-row .who .domain { font-weight: 700; }
 .journey-row .who .email { color: var(--muted); font-size: 11px; }
+.journey-row .who .sent-status { font-size: 11px; margin-top: 3px; display: flex; align-items: center; gap: 5px; }
+.journey-row .who .sent-status.success { color: #16a34a; }
+.journey-row .who .sent-status.failed { color: var(--danger); }
 .journey-steps { display: flex; align-items: center; gap: 4px; flex: 1; flex-wrap: wrap; }
 .journey-step {
   display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 10px;
@@ -296,20 +299,24 @@ body.dashboard-bg .sidebar a.active, body.dashboard-bg .sidebar a:hover {
   background: rgba(255,138,61,0.25); color: var(--accent);
 }
 /* Cards that used to be fully opaque are now glass too, so the photo
-   shows through everywhere, not just the gaps between them. */
+   shows through everywhere, not just the gaps between them - but opaque
+   enough that the dark text/light text each card already uses keeps
+   solid contrast regardless of what part of the photo is behind it.
+   (A see-the-photo-through-it card and *readable* text are in tension;
+   this favors legibility and keeps only a hint of the image/blur.) */
 body.dashboard-bg .widget {
-  background: rgba(21,22,27,0.45);
+  background: rgba(18,19,24,0.78);
   backdrop-filter: blur(8px);
   border-color: rgba(255,255,255,0.1);
 }
 body.dashboard-bg .panel {
-  background: rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.92);
   backdrop-filter: blur(10px);
-  border-color: rgba(255,255,255,0.3);
+  border-color: rgba(255,255,255,0.5);
 }
-body.dashboard-bg .flash { background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); }
-body.dashboard-bg .journey-row { background: rgba(255,255,255,0.35); }
-body.dashboard-bg tr:hover td { background: rgba(255,255,255,0.25); }
+body.dashboard-bg .flash { background: rgba(255,255,255,0.92); backdrop-filter: blur(10px); }
+body.dashboard-bg .journey-row { background: rgba(255,255,255,0.8); }
+body.dashboard-bg tr:hover td { background: rgba(255,255,255,0.5); }
 
 /* Text sitting directly on the photo (no card behind it) gets a shadow
    instead of a solid backdrop, so it stays legible without hiding the image. */
