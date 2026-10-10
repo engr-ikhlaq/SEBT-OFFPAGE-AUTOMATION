@@ -23,7 +23,9 @@ log = logging.getLogger(__name__)
 
 
 class SearchBlockedError(RuntimeError):
-    """Google is showing a CAPTCHA or block page. Stop and retry later."""
+    """Google is showing a CAPTCHA or block page, and nobody solved it
+    (within the timeout, or Stop was clicked) - see GoogleSearch's
+    CAPTCHA_TIMEOUT_SECONDS / _wait_for_captcha."""
 
 
 def _pause(low: float, high: float) -> None:
@@ -138,14 +140,29 @@ class GoogleSearch:
     HOME_URL = "https://www.google.co.uk/?hl=en-GB&gl=uk&pws=0"
     RESULT_SELECTOR = "div.g, div.MjjYud"
 
-    def __init__(self, session: BrowserSession, max_pages: int = 5, home_url: str | None = None) -> None:
+    # How long to keep checking back for a human to solve a CAPTCHA (via
+    # the visible Chrome window - see scrape_job.py's SCRAPE_HEADLESS
+    # comment) before giving up and failing the scrape, and how often to
+    # check. 10 minutes is generous for someone who's actually watching,
+    # without holding the "one scrape at a time" lock forever if nobody is.
+    CAPTCHA_POLL_SECONDS = 3
+    CAPTCHA_TIMEOUT_SECONDS = 600
+
+    def __init__(self, session: BrowserSession, max_pages: int = 5, home_url: str | None = None,
+                 should_stop=None, on_captcha=None) -> None:
         self._session = session
         self._max_pages = max_pages
         self._home_url = home_url or self.HOME_URL
+        self._should_stop = should_stop
+        # on_captcha(True/False): told when a wait starts/ends, so a caller
+        # (scrape_job.py) can reflect "waiting for you to solve a CAPTCHA"
+        # in the status it reports, instead of the run just looking stuck.
+        self._on_captcha = on_captcha
 
     def run(self, query: str) -> list[SearchResult]:
         driver = self._session.driver
         self._session.open(self._home_url)
+        self._wait_for_captcha()  # Google sometimes blocks on the home page itself, before any search
         _pause(2, 5)
 
         box = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "q")))
@@ -164,8 +181,7 @@ class GoogleSearch:
         return results
 
     def _parse_results(self) -> list[SearchResult]:
-        if "/sorry/" in self._session.current_url:
-            raise SearchBlockedError("Google is showing a CAPTCHA. Stop and retry later.")
+        self._wait_for_captcha()
 
         results: list[SearchResult] = []
         blocks = self._session.driver.find_elements(By.CSS_SELECTOR, self.RESULT_SELECTOR)
@@ -175,6 +191,39 @@ class GoogleSearch:
                 continue
             results.append(SearchResult(url=url, domain=domain_of(url), snippet=block.text))
         return results
+
+    def _wait_for_captcha(self) -> None:
+        """If Google is showing a CAPTCHA right now, waits - checking back
+        every CAPTCHA_POLL_SECONDS - for it to go away, which happens the
+        moment someone solves it by hand in the (visible, see
+        SCRAPE_HEADLESS) Chrome window; Google then forwards the browser
+        on to the page it originally asked for, so nothing needs re-doing
+        once this returns. Gives up and raises SearchBlockedError if
+        CAPTCHA_TIMEOUT_SECONDS passes with no one solving it, or if
+        should_stop() (the Stop button) fires while waiting. A no-op,
+        returning immediately, when there's no CAPTCHA showing."""
+        if "/sorry/" not in self._session.current_url:
+            return
+
+        log.warning("Google is showing a CAPTCHA - waiting for it to be solved in the Chrome window")
+        if self._on_captcha is not None:
+            self._on_captcha(True)
+        try:
+            waited = 0.0
+            while "/sorry/" in self._session.current_url:
+                if self._should_stop is not None and self._should_stop():
+                    raise SearchBlockedError("Stopped while waiting for the CAPTCHA to be solved.")
+                if waited >= self.CAPTCHA_TIMEOUT_SECONDS:
+                    raise SearchBlockedError(
+                        f"Google is still showing a CAPTCHA after {int(self.CAPTCHA_TIMEOUT_SECONDS // 60)} "
+                        "minutes with no one solving it. Stop and retry later, or solve it by hand sooner next time."
+                    )
+                time.sleep(self.CAPTCHA_POLL_SECONDS)
+                waited += self.CAPTCHA_POLL_SECONDS
+            log.info("CAPTCHA solved - resuming")
+        finally:
+            if self._on_captcha is not None:
+                self._on_captcha(False)
 
     def _go_next(self) -> bool:
         try:

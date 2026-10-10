@@ -83,6 +83,11 @@ class ScrapeStatus:
     last_domain: str = ""
     error: str = ""
     backend_name: str = ""
+    # True while state is still "running" but Google is showing a CAPTCHA
+    # and the scraper is waiting (see offpage.browser.GoogleSearch) for it
+    # to be solved by hand in the Chrome window - lets the page say so
+    # instead of just looking stuck on the same count.
+    waiting_captcha: bool = False
 
 
 _lock = threading.Lock()
@@ -177,6 +182,7 @@ def _start(keyword: str, username: str, is_owner: bool, reset_total: bool,
             _status.queued_total = 0
         _status.last_domain = ""
         _status.error = ""
+        _status.waiting_captcha = False
     _thread = threading.Thread(target=_run_batch, args=(keyword, username, is_owner, country, language), daemon=True)
     _thread.start()
     return True
@@ -204,6 +210,11 @@ def _on_lead(count: int, lead) -> None:
         _status.queued_this_batch = count
         _status.queued_total += 1
         _status.last_domain = lead.domain
+
+
+def _on_captcha(waiting: bool) -> None:
+    with _lock:
+        _status.waiting_captcha = waiting
 
 
 def _should_stop() -> bool:
@@ -239,7 +250,8 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
 
             pipeline = LeadPipeline(
                 settings=settings,
-                search=GoogleSearch(session, settings.max_pages, home_url=search_url),
+                search=GoogleSearch(session, settings.max_pages, home_url=search_url,
+                                     should_stop=_should_stop, on_captcha=_on_captcha),
                 reader=PageReader(session, parser),
                 crawler=SiteCrawler(http, parser, workers=settings.crawl_workers),
                 scorer=scorer,
