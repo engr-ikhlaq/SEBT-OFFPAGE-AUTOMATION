@@ -82,8 +82,13 @@ a { color: inherit; }
   font-size: 12px; padding: 9px 14px; border-radius: 999px;
   border: 1px solid var(--card-border); background: var(--card);
   color: var(--text); text-decoration: none; cursor: pointer; font-family: inherit;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+.nav-links a:hover, .nav-links button:hover {
+  transform: translateY(-1px); box-shadow: 0 8px 18px -10px rgba(20,20,30,0.35); border-color: var(--accent); color: var(--accent);
 }
 .nav-links a.primary { background: var(--dark); color: #fff; border-color: var(--dark); }
+.nav-links a.primary:hover { background: #000; color: #fff; }
 .nav-links .badge-count { background: var(--danger); color: #fff; border-radius: 999px; font-size: 10px; padding: 1px 6px; margin-left: 5px; }
 
 /* ---- greeting: plain text on the shell background, above the photo ---- */
@@ -102,9 +107,12 @@ a { color: inherit; }
   background: rgba(255,255,255,0.16); backdrop-filter: blur(8px);
   border: 1px solid rgba(255,255,255,0.22); color: #fff;
   padding: 9px 16px; border-radius: 999px;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
 }
+.hero-pill:hover { transform: translateY(-1px); background: rgba(255,255,255,0.26); box-shadow: 0 10px 22px -10px rgba(0,0,0,0.5); }
 .hero-pill.cta { background: var(--accent); border-color: var(--accent); font-weight: 700; }
-.hero-pill:disabled { opacity: 0.5; cursor: not-allowed; }
+.hero-pill.cta:hover { background: #ff7a22; }
+.hero-pill:disabled, .hero-pill:disabled:hover { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* ---- live progress for an outreach_job.py run (Follow-ups / Send to new leads) -
    same gauge card as Outreach Reply Rate (.widget-gauge), just standalone
@@ -171,8 +179,11 @@ a { color: inherit; }
   font-size: 12px; padding: 8px 14px; border-radius: 999px;
   border: 1px solid var(--card-border); background: var(--shell);
   color: var(--text); cursor: pointer; text-decoration: none; font-family: inherit;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, color .15s ease;
 }
-.panel h2 button:hover, .panel h2 a.btn:hover { border-color: var(--accent); color: var(--accent); }
+.panel h2 button:hover, .panel h2 a.btn:hover {
+  border-color: var(--accent); color: var(--accent); transform: translateY(-1px); box-shadow: 0 8px 18px -10px rgba(20,20,30,0.3);
+}
 
 .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
@@ -238,12 +249,62 @@ input[type="password"]:focus, input[type="text"]:focus, input[type="email"]:focu
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,138,61,0.18);
 }
 .field-errors { color: var(--danger); font-size: 12px; margin-top: -10px; margin-bottom: 10px; }
+
+/* ---- buttons: one consistent, animated base so a bare <button> never
+   falls back to the browser's unstyled default (grey box, system font) -
+   every variant below just layers color/weight on top of this. ---- */
+button {
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  padding: 10px 18px; border-radius: 999px; border: 1px solid var(--card-border);
+  background: var(--card); color: var(--text); cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease,
+              border-color .15s ease, color .15s ease, opacity .15s ease;
+}
+button:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -10px rgba(20,20,30,0.35); border-color: var(--accent); color: var(--accent); }
+button:active { transform: translateY(0); box-shadow: none; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
 button.btn-primary {
   width: 100%; padding: 13px 18px; border-radius: var(--radius-sm); border: none;
   background: var(--dark); color: white; font-size: 14px; font-weight: 700;
-  cursor: pointer; transition: opacity .15s ease; font-family: inherit;
 }
-button.btn-primary:hover { opacity: 0.88; }
+button.btn-primary:hover { background: #000; color: #fff; opacity: 1; transform: translateY(-1px); box-shadow: 0 12px 28px -10px rgba(0,0,0,0.5); }
+
+/* Neutral but deliberate - "Connect", "Disconnect" before it's confirmed, etc. */
+.btn-outline { background: transparent; }
+.btn-outline:hover { background: rgba(255,138,61,0.08); }
+
+/* Destructive/undo-style actions - Disconnect, Remove, Leave access. Reads
+   as "careful" at rest, commits to red only on hover so it's not alarming
+   just sitting in a list. */
+.btn-danger {
+  color: var(--danger); border-color: rgba(239,68,68,0.28); background: rgba(239,68,68,0.05);
+}
+.btn-danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); box-shadow: 0 10px 24px -10px rgba(239,68,68,0.5); }
+
+/* Low-emphasis text-style actions that still need to feel clickable -
+   "Clear leads", "Clear". */
+.btn-subtle { border-color: transparent; background: transparent; }
+.btn-subtle:hover { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.25); }
+
+/* A running job's Stop control - deliberately the one warm-colored pill
+   among otherwise-neutral controls, so it reads as "something is active
+   and here's how to interrupt it" rather than blending into the chrome. */
+.btn-stop {
+  background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); color: #fca5a5;
+}
+body:not(.dashboard-bg) .btn-stop { color: var(--danger); }
+.btn-stop:hover { background: var(--danger); border-color: var(--danger); color: #fff; box-shadow: 0 10px 24px -10px rgba(239,68,68,0.55); }
+
+/* Icon-only ghost buttons - the "x" to remove a journey row, etc. */
+.icon-btn {
+  background: none; border: none; color: var(--muted); padding: 6px; line-height: 1;
+  border-radius: 999px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover { background: rgba(239,68,68,0.1); color: var(--danger); box-shadow: none; transform: none; }
+
+.btn-sm { padding: 7px 13px; font-size: 12px; }
 
 .login-card {
   width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--card-border);
@@ -272,13 +333,14 @@ button.btn-primary:hover { opacity: 0.88; }
 .modal-actions button {
   width: 100%; padding: 13px 18px; border-radius: var(--radius-sm); border: none;
   font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease, color .15s ease, opacity .15s ease;
 }
 .modal-btn-primary { background: var(--accent); color: #fff; }
-.modal-btn-primary:hover { opacity: 0.9; }
+.modal-btn-primary:hover { opacity: 1; background: #ff7a22; transform: translateY(-1px); box-shadow: 0 12px 26px -10px rgba(255,138,61,0.55); }
 .modal-btn-secondary { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2) !important; }
-.modal-btn-secondary:hover { background: rgba(255,255,255,0.16); }
+.modal-btn-secondary:hover { background: rgba(255,255,255,0.18); transform: translateY(-1px); }
 .modal-btn-ghost { background: transparent; color: rgba(255,255,255,0.5); font-weight: 600 !important; }
-.modal-btn-ghost:hover { color: rgba(255,255,255,0.8); }
+.modal-btn-ghost:hover { color: rgba(255,255,255,0.85); transform: none; box-shadow: none; }
 
 /* ---- dashboard page background: the same photo as the hero, now behind
    the ENTIRE page, fixed so it doesn't scroll with the content. The shell

@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body class="dashboard-bg">
-{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_check, icon_trash, icon_link, icon_check_circle %}
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_check, icon_trash, icon_link, icon_check_circle, icon_stop %}
 <div class="shell">
 
     <div class="sidebar">
@@ -59,7 +59,7 @@
                 </div>
                 <form method="POST" action="{{ url_for('connect_google_disconnect') }}" onsubmit="return confirm('Disconnect {{ google_account.google_email }}? Sending will fall back to the shared setup.');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit">Disconnect</button>
+                    <button type="submit" class="btn-danger btn-sm">Disconnect</button>
                 </form>
             </div>
             {% elif manual_account %}
@@ -73,7 +73,7 @@
                 </div>
                 <form method="POST" action="{{ url_for('connect_gmail_manual_disconnect') }}" onsubmit="return confirm('Disconnect {{ manual_account.email }}? Sending will fall back to the shared setup.');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit">Disconnect</button>
+                    <button type="submit" class="btn-danger btn-sm">Disconnect</button>
                 </form>
             </div>
             {% else %}
@@ -119,7 +119,7 @@
                 </div>
                 <form method="POST" action="{{ url_for('connect_sheet_disconnect') }}" onsubmit="return confirm('Disconnect this Sheet? New leads will go to your local file instead.');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit">Disconnect</button>
+                    <button type="submit" class="btn-danger btn-sm">Disconnect</button>
                 </form>
             </div>
             {% elif service_account_sheets_configured %}
@@ -174,7 +174,26 @@
                     </div>
                 </div>
                 <div class="bar-track"><div class="bar-fill" id="scrape-progress-bar" style="width:0%; background: var(--accent);"></div></div>
-                <button type="button" class="nav-links" id="scrape-stop-btn" style="margin-top:14px; border:1px solid var(--card-border); background:var(--shell); padding:8px 14px; border-radius:999px; cursor:pointer;">Stop</button>
+                <button type="button" class="btn-stop btn-sm" id="scrape-stop-btn" style="margin-top:14px; display:inline-flex; align-items:center; gap:7px;">{{ icon_stop(11) }} Stop</button>
+            </div>
+
+            <!-- Paused after a batch, waiting on "keep going / send now / stop" - stays
+                 visible even after the popup is dismissed, so there's always a way back
+                 to it without reloading the page (previously: dismissing the popup left
+                 the page looking fully idle with no way to resume or stop). -->
+            <div id="scrape-paused" style="display:none;">
+                <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
+                    <div class="w-icon">{{ icon_check_circle(20) }}</div>
+                    <div>
+                        <div style="font-weight:700;">Paused — "<span id="paused-keyword-label"></span>" found <span id="paused-total">0</span> lead(s) this batch</div>
+                        <div class="hint" style="margin:2px 0 0;">Keep looking for more, send to what's been found, or stop here.</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button type="button" class="btn-primary" id="paused-continue-btn" style="width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:7px;">{{ icon_search(14) }} Keep scraping</button>
+                    <button type="button" class="btn-outline btn-sm" id="paused-send-btn" style="display:inline-flex; align-items:center; gap:7px;">{{ icon_mail(14) }} Send to these leads now</button>
+                    <button type="button" class="btn-stop btn-sm" id="paused-stop-btn" style="display:inline-flex; align-items:center; gap:7px;">{{ icon_stop(11) }} Stop</button>
+                </div>
             </div>
         </div>
 
@@ -186,7 +205,7 @@
                 <form method="POST" action="{{ url_for('clear_leads') }}"
                       onsubmit="return confirm('Clear these leads from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" title="Clear from this view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:5px; font-size:12px; padding:6px 12px; color:var(--accent-2);">{{ icon_trash(13) }} Clear leads</button>
+                    <button type="submit" class="btn-subtle btn-sm" title="Clear from this view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:5px; color:var(--accent-2);">{{ icon_trash(13) }} Clear leads</button>
                 </form>
                 {% endif %}
             </div>
@@ -274,6 +293,7 @@
 
   const idleForm = document.getElementById('scrape-idle-form');
   const runningBox = document.getElementById('scrape-running');
+  const pausedBox = document.getElementById('scrape-paused');
   const keywordInput = document.getElementById('scrape-keyword');
   const startBtn = document.getElementById('scrape-start-btn');
   const stopBtn = document.getElementById('scrape-stop-btn');
@@ -281,6 +301,12 @@
   const lastDomainEl = document.getElementById('scrape-last-domain');
   const keywordLabelEl = document.getElementById('scrape-keyword-label');
   const progressBar = document.getElementById('scrape-progress-bar');
+
+  const pausedKeywordEl = document.getElementById('paused-keyword-label');
+  const pausedTotalEl = document.getElementById('paused-total');
+  const pausedContinueBtn = document.getElementById('paused-continue-btn');
+  const pausedSendBtn = document.getElementById('paused-send-btn');
+  const pausedStopBtn = document.getElementById('paused-stop-btn');
 
   const modal = document.getElementById('scrape-modal');
   const modalKeyword = document.getElementById('modal-keyword');
@@ -325,14 +351,15 @@
     }).then(r => r.json().then(data => ({ ok: r.ok, data })));
   }
 
-  function setRunningView(running) {
-    idleForm.style.display = running ? 'none' : 'block';
-    runningBox.style.display = running ? 'block' : 'none';
+  function setView(view) {  // 'idle' | 'running' | 'paused'
+    idleForm.style.display = view === 'idle' ? 'block' : 'none';
+    runningBox.style.display = view === 'running' ? 'block' : 'none';
+    pausedBox.style.display = view === 'paused' ? 'block' : 'none';
   }
 
   function applyStatus(s) {
     if (s.state === 'running') {
-      setRunningView(true);
+      setView('running');
       keywordLabelEl.textContent = s.keyword;
       countEl.textContent = s.queued_this_batch;
       lastDomainEl.textContent = s.last_domain || '—';
@@ -341,7 +368,12 @@
       terminalMessageShown = false;
       startPolling();  // covers resuming a scrape that was already running on page load
     } else if (s.state === 'awaiting_decision') {
-      setRunningView(false);
+      // Persistent paused controls stay visible however the page got
+      // here (fresh load, or the popup being dismissed) - the popup
+      // itself only pops up once per batch, the first time it's seen.
+      setView('paused');
+      pausedKeywordEl.textContent = s.keyword;
+      pausedTotalEl.textContent = s.queued_this_batch;
       if (!modalShownForBatch) {
         modalKeyword.textContent = s.keyword;
         modalTotal.textContent = s.queued_this_batch;
@@ -349,7 +381,7 @@
         modalShownForBatch = true;
       }
     } else if (s.state === 'stopped') {
-      setRunningView(false);
+      setView('idle');
       if (!terminalMessageShown) {
         terminalMessageShown = true;
         alert(`Stopped. ${s.queued_total} lead(s) found this run are already saved to ${s.backend_name || 'your leads store'} — nothing is lost.`);
@@ -357,7 +389,7 @@
       }
       stopPolling();
     } else if (s.state === 'error') {
-      setRunningView(false);
+      setView('idle');
       if (!terminalMessageShown) {
         terminalMessageShown = true;
         alert(`Scraping stopped because of an error, but ${s.queued_total} lead(s) found before it happened are already saved to ${s.backend_name || 'your leads store'} — nothing found so far is lost.\n\nError: ${s.error || 'unknown error'}`);
@@ -365,7 +397,7 @@
       }
       stopPolling();
     } else {
-      setRunningView(false);
+      setView('idle');
       if (s.state === 'finished' && !modalShownForBatch) {
         modalShownForBatch = true;
       }
@@ -414,29 +446,41 @@
     api('/scrape/stop').then(({ data }) => applyStatus(data));
   });
 
-  modalContinueBtn.addEventListener('click', () => {
+  function doContinue() {
     modal.style.display = 'none';
     api('/scrape/continue').then(({ ok, data }) => {
       if (!ok) { alert(data.error || 'Could not continue scraping.'); return; }
       applyStatus(data);
       startPolling();
     });
-  });
+  }
 
-  modalSendBtn.addEventListener('click', () => {
-    modalSendBtn.disabled = true;
+  function doSendNow(triggerBtn) {
+    triggerBtn.disabled = true;
     api('/scrape/send-now').then(({ ok, data }) => {
-      modalSendBtn.disabled = false;
+      triggerBtn.disabled = false;
       modal.style.display = 'none';
       if (!ok) { alert(data.error || 'Send failed.'); return; }
       alert(`Sent ${data.sent}, failed ${data.failed}, skipped ${data.skipped}.`);
       poll();
     });
-  });
+  }
 
+  function doDismiss() {
+    api('/scrape/dismiss').then(({ data }) => applyStatus(data));
+  }
+
+  modalContinueBtn.addEventListener('click', doContinue);
+  modalSendBtn.addEventListener('click', () => doSendNow(modalSendBtn));
   modalDismissBtn.addEventListener('click', () => { modal.style.display = 'none'; });
 
-  poll();  // pick up a scrape already running from a previous page load
+  // Same three choices, as persistent buttons under the panel instead of
+  // a one-shot popup - see setView('paused').
+  pausedContinueBtn.addEventListener('click', doContinue);
+  pausedSendBtn.addEventListener('click', () => doSendNow(pausedSendBtn));
+  pausedStopBtn.addEventListener('click', doDismiss);
+
+  poll();  // pick up a scrape already running (or paused) from a previous page load
 })();
 </script>
 

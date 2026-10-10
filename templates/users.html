@@ -60,7 +60,7 @@
                         {% if u.id != current_user_id %}
                         <form method="POST" action="{{ url_for('delete_user', user_id=u.id) }}" style="margin:0;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" onclick="return confirm('Remove access for {{ u.username }}?')">Remove</button>
+                            <button type="submit" class="btn-danger btn-sm" onclick="return confirm('Remove access for {{ u.username }}?')">Remove</button>
                         </form>
                         {% endif %}
                     </td>
@@ -81,7 +81,7 @@
             </p>
             <form method="POST" action="{{ url_for('leave_access') }}" style="margin:0;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" onclick="return confirm('Leave this app? Your own access will be removed immediately.')">
+                <button type="submit" class="btn-danger" onclick="return confirm('Leave this app? Your own access will be removed immediately.')">
                     Leave access
                 </button>
             </form>

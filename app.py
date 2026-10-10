@@ -1198,6 +1198,18 @@ def scrape_stop():
     return scrape_job.get_status()
 
 
+@app.route("/scrape/dismiss", methods=["POST"])
+def scrape_dismiss():
+    """The "Stop" choice on a paused (awaiting_decision) batch - as
+    opposed to /scrape/stop, which asks an ACTIVELY RUNNING batch to wind
+    down. Nothing scraped so far is lost, only the paused status is
+    cleared so Compose's idle form becomes usable again."""
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    scrape_job.dismiss_decision()
+    return scrape_job.get_status()
+
+
 @app.route("/scrape/send-now", methods=["POST"])
 def scrape_send_now():
     """The "send emails instead" half of the after-batch decision."""

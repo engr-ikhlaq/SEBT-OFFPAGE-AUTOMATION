@@ -101,7 +101,14 @@ def is_busy() -> bool:
 def start(keyword: str, username: str, is_owner: bool) -> bool:
     """Starts a fresh scrape for `keyword`, writing to the backend
     data_source.for_user(username, is_owner) resolves. False if one is
-    already busy (one scrape, one Chrome window, at a time)."""
+    already busy (one scrape, one Chrome window, at a time) OR a previous
+    batch is still paused awaiting a decision - starting a new one right
+    over it would silently discard whatever that batch was waiting on
+    (see continue_scraping()/dismiss_decision() for the two ways to
+    actually resolve it first)."""
+    with _lock:
+        if _status.state in ("running", "awaiting_decision"):
+            return False
     return _start(keyword, username, is_owner, reset_total=True)
 
 
@@ -111,6 +118,23 @@ def continue_scraping() -> bool:
         keyword, username = _status.keyword, _status.username
         ready = _status.state == "awaiting_decision" and bool(keyword)
     return _start(keyword, username, _last_is_owner, reset_total=False) if ready else False
+
+
+def dismiss_decision() -> bool:
+    """The "Stop" choice on a paused ("awaiting_decision") batch: clears it
+    back to idle without starting anything new. Whatever was already found
+    is already saved (LeadPipeline writes as it goes) - this only resets
+    the status so the Compose page's idle form is usable again instead of
+    staying stuck showing a paused batch with no running thread behind it.
+    False if nothing is actually paused."""
+    with _lock:
+        if _status.state != "awaiting_decision":
+            return False
+        _status.state = "idle"
+        _status.keyword = ""
+        _status.last_domain = ""
+        _status.queued_this_batch = 0
+    return True
 
 
 def stop() -> None:

@@ -75,6 +75,33 @@ class ScrapeJobStateTests(unittest.TestCase):
         self._wait_until_not_running()
         self.assertEqual(scrape_job.get_status()["username"], "bob")
 
+    def test_start_refuses_while_a_previous_batch_is_awaiting_decision(self):
+        """A fresh start() must not silently discard a paused batch - that
+        batch's keyword/counts would just vanish with no way back to it."""
+        self._use_fake_batch(found=5)
+        scrape_job.start("pept", "alice", False)
+        self._wait_until_not_running()
+        self.assertEqual(scrape_job.get_status()["state"], "awaiting_decision")
+
+        self.assertFalse(scrape_job.start("other-keyword", "alice", False))
+        self.assertEqual(scrape_job.get_status()["keyword"], "pept")  # untouched
+
+    def test_dismiss_decision_clears_a_paused_batch_back_to_idle(self):
+        self._use_fake_batch(found=5)
+        scrape_job.start("pept", "alice", False)
+        self._wait_until_not_running()
+
+        self.assertTrue(scrape_job.dismiss_decision())
+        status = scrape_job.get_status()
+        self.assertEqual(status["state"], "idle")
+        self.assertEqual(status["keyword"], "")
+
+        self.assertTrue(scrape_job.start("fresh-keyword", "alice", False))  # no longer blocked
+
+    def test_dismiss_decision_is_a_no_op_when_nothing_is_paused(self):
+        scrape_job._status.state = "idle"
+        self.assertFalse(scrape_job.dismiss_decision())
+
     def _wait_until_not_running(self, timeout: float = 2.0):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:

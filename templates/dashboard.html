@@ -8,7 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body class="dashboard-bg">
-{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_eye, icon_message, icon_alert, icon_trash, icon_check, icon_x, icon_bell %}
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_eye, icon_message, icon_alert, icon_trash, icon_check, icon_x, icon_bell, icon_stop %}
 <div class="shell">
 
     <div class="sidebar">
@@ -92,7 +92,7 @@
             </div>
             <div class="gauge-label" id="outreach-progress-label">Sending…</div>
             <div class="gauge-sub" id="outreach-progress-count"></div>
-            <button type="button" id="outreach-stop-btn" style="margin-top:10px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.08); color:#fff; padding:6px 14px; border-radius:999px; cursor:pointer; font-size:12px;">Stop</button>
+            <button type="button" id="outreach-stop-btn" class="btn-stop btn-sm" style="margin-top:10px; display:inline-flex; align-items:center; gap:6px;">{{ icon_stop(10) }} Stop</button>
         </div>
 
         <!-- stat widgets: 3 small cards + a tall gauge spanning both rows,
@@ -175,7 +175,7 @@
                     <form method="POST" action="{{ url_for('clear_leads') }}"
                           onsubmit="return confirm('Clear {{ lead_counts.total }} lead(s) from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" title="Clear from dashboard view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:4px; font-size:11px; padding:4px 10px; color:var(--accent-2);">{{ icon_trash(12) }} Clear</button>
+                        <button type="submit" class="btn-subtle" title="Clear from dashboard view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:4px; font-size:11px; padding:4px 10px; color:var(--accent-2);">{{ icon_trash(12) }} Clear</button>
                     </form>
                     {% endif %}
                 </div>
@@ -239,8 +239,7 @@
                         <form method="POST" action="{{ url_for('delete_lead_journey', recipient_id=lead.id) }}"
                               onsubmit="return confirm('Remove {{ lead.email }} from this list? This only removes it from the dashboard, not any lead data.');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" title="Remove from this list"
-                                    style="background:none; border:none; color:var(--muted); cursor:pointer; padding:4px 6px; line-height:1;">{{ icon_x(14) }}</button>
+                            <button type="submit" class="icon-btn" title="Remove from this list">{{ icon_x(14) }}</button>
                         </form>
                     </div>
                     {% else %}
