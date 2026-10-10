@@ -89,7 +89,12 @@ _FOLLOWUP_BODY_LINES = (
 
 
 def _html_body(lines: tuple[str, ...]) -> str:
-    return "".join(f"<p>{line}</p>" if line else "<br>" for line in lines)
+    """Blank entries in `lines` are paragraph SEPARATORS, not content - they
+    used to also render as a literal <br>, stacking on top of each <p>'s own
+    margin and doubling the visual gap between paragraphs. Skipped here, and
+    every real line gets one explicit margin instead of relying on each
+    email client's own (inconsistent) default <p> spacing."""
+    return "".join(f'<p style="margin:0 0 1em;">{line}</p>' for line in lines if line)
 
 
 def _text_body(lines: tuple[str, ...]) -> str:
