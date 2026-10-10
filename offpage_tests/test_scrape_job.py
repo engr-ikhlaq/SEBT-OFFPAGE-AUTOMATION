@@ -23,7 +23,7 @@ class ScrapeJobStateTests(unittest.TestCase):
 
     def _use_fake_batch(self, found: int, final_state: str = "awaiting_decision"):
         """Fake _run_batch: pretends to find `found` leads, then sets final_state directly."""
-        def fake(keyword, username, is_owner, region=None):
+        def fake(keyword, username, is_owner, country=None, language=None):
             for i in range(1, found + 1):
                 scrape_job._on_lead(i, type("L", (), {"domain": f"lead{i}.test"})())
             with scrape_job._lock:
@@ -79,31 +79,52 @@ class ScrapeJobStateTests(unittest.TestCase):
         self._use_fake_batch(found=1)
         scrape_job.start("pept", "alice", False)
         self._wait_until_not_running()
-        self.assertEqual(scrape_job.get_status()["region"], "uk")
+        status = scrape_job.get_status()
+        self.assertEqual(status["country"], "uk")
+        self.assertEqual(status["language"], "en-GB")
 
     def test_an_unrecognized_region_falls_back_to_the_united_kingdom(self):
         self._use_fake_batch(found=1)
-        scrape_job.start("pept", "alice", False, region="not-a-real-region")
+        scrape_job.start("pept", "alice", False, country="not-a-real-country", language="not-a-real-language")
         self._wait_until_not_running()
-        self.assertEqual(scrape_job.get_status()["region"], "uk")
+        status = scrape_job.get_status()
+        self.assertEqual(status["country"], "uk")
+        self.assertEqual(status["language"], "en-GB")
 
     def test_a_chosen_region_is_recorded_and_carried_into_continue_scraping(self):
         self._use_fake_batch(found=5)
-        scrape_job.start("pept", "alice", False, region="us")
+        scrape_job.start("pept", "alice", False, country="us", language="en-US")
         self._wait_until_not_running()
-        self.assertEqual(scrape_job.get_status()["region"], "us")
+        status = scrape_job.get_status()
+        self.assertEqual(status["country"], "us")
+        self.assertEqual(status["language"], "en-US")
 
         received = {}
 
-        def fake_continue(keyword, username, is_owner, region=None):
-            received["region"] = region
+        def fake_continue(keyword, username, is_owner, country=None, language=None):
+            received["country"] = country
+            received["language"] = language
             with scrape_job._lock:
                 scrape_job._status.state = "finished"
         scrape_job._run_batch = fake_continue
 
         self.assertTrue(scrape_job.continue_scraping())
         self._wait_until_not_running()
-        self.assertEqual(received["region"], "us")
+        self.assertEqual(received["country"], "us")
+        self.assertEqual(received["language"], "en-US")
+
+    def test_the_actual_search_url_targets_the_chosen_country_and_language(self):
+        """End-to-end check (no fake) that a chosen region really changes
+        the URL the scraper would open - this is what makes the dropdown
+        actually affect the search, not just get recorded and ignored."""
+        from offpage.regions import home_url
+        self.assertEqual(
+            home_url("us", "en-US"), "https://www.google.com/?hl=en-US&gl=us&pws=0",
+        )
+        self.assertEqual(
+            home_url("uk", "en-GB"), "https://www.google.com/?hl=en-GB&gl=uk&pws=0",
+        )
+        self.assertNotEqual(home_url("us", "en-US"), home_url("de", "de"))
 
     def test_start_refuses_while_a_previous_batch_is_awaiting_decision(self):
         """A fresh start() must not silently discard a paused batch - that

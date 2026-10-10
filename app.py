@@ -49,7 +49,7 @@ import auto_outreach
 import google_oauth
 import outreach_job
 import scrape_job
-from offpage.regions import DEFAULT_REGION, REGIONS
+from offpage.regions import COUNTRIES, DEFAULT_COUNTRY, DEFAULT_LANGUAGE, LANGUAGES
 from mailer import GmailApiSender, MailerConfig, SmtpSender, send_batch
 from tracking import tracking_bp
 import data_source
@@ -289,9 +289,12 @@ def _google_account_context() -> dict:
         "service_account_sheets_configured": data_source.service_account_sheets_configured(),
         "service_account_email": sheets_source.service_account_email(),
         "connect_sheet_form": ConnectSheetForm(),
-        "regions": REGIONS.values(),
-        "default_region": DEFAULT_REGION,
-        "region_labels": {code: region.label for code, region in REGIONS.items()},
+        "countries": sorted(COUNTRIES.items(), key=lambda item: item[1]),
+        "languages": sorted(LANGUAGES.items(), key=lambda item: item[1]),
+        "default_country": DEFAULT_COUNTRY,
+        "default_language": DEFAULT_LANGUAGE,
+        "country_labels": COUNTRIES,
+        "language_labels": LANGUAGES,
     }
 
 
@@ -1227,10 +1230,11 @@ def scrape_start():
         return refusal
     body = request.get_json(silent=True) or {}
     keyword = body.get("keyword", "").strip()
-    region = body.get("region", "").strip()
+    country = body.get("country", "").strip()
+    language = body.get("language", "").strip()
     if not keyword:
         return {"error": "Enter a target keyword first."}, 400
-    if not scrape_job.start(keyword, session["username"], require_owner(), region=region):
+    if not scrape_job.start(keyword, session["username"], require_owner(), country=country, language=language):
         return {"error": "A scrape is already running."}, 409
     return scrape_job.get_status()
 

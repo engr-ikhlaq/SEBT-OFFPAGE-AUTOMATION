@@ -44,7 +44,7 @@ from offpage.crawler import SiteCrawler
 from offpage.filters import UrlFilter
 from offpage.parsing import PageParser
 from offpage.pipeline import LeadPipeline
-from offpage.regions import DEFAULT_REGION, get_region
+from offpage.regions import DEFAULT_COUNTRY, DEFAULT_LANGUAGE, get_country, get_language, home_url
 from offpage.relevance import RelevanceGate
 from offpage.scoring import Scorer
 from offpage.storage import SeenStore
@@ -76,7 +76,8 @@ class ScrapeStatus:
     state: str = "idle"
     keyword: str = ""
     username: str = ""
-    region: str = ""  # Google search region code, see offpage/regions.py
+    country: str = ""  # Google `gl` code, see offpage/regions.py
+    language: str = ""  # Google `hl` code, see offpage/regions.py
     queued_this_batch: int = 0
     queued_total: int = 0
     last_domain: str = ""
@@ -100,28 +101,33 @@ def is_busy() -> bool:
         return _status.state == "running"
 
 
-def start(keyword: str, username: str, is_owner: bool, region: str = DEFAULT_REGION) -> bool:
-    """Starts a fresh scrape for `keyword` in `region` (a code from
-    offpage/regions.py - unrecognized or missing falls back to the United
-    Kingdom, this app's long-standing default), writing to the backend
-    data_source.for_user(username, is_owner) resolves. False if one is
-    already busy (one scrape, one Chrome window, at a time) OR a previous
-    batch is still paused awaiting a decision - starting a new one right
-    over it would silently discard whatever that batch was waiting on
-    (see continue_scraping()/dismiss_decision() for the two ways to
-    actually resolve it first)."""
+def start(keyword: str, username: str, is_owner: bool,
+          country: str = DEFAULT_COUNTRY, language: str = DEFAULT_LANGUAGE) -> bool:
+    """Starts a fresh scrape for `keyword` targeting `country`/`language`
+    (codes from offpage/regions.py - unrecognized or missing falls back to
+    the United Kingdom/English, this app's long-standing default), writing
+    to the backend data_source.for_user(username, is_owner) resolves.
+    False if one is already busy (one scrape, one Chrome window, at a
+    time) OR a previous batch is still paused awaiting a decision -
+    starting a new one right over it would silently discard whatever that
+    batch was waiting on (see continue_scraping()/dismiss_decision() for
+    the two ways to actually resolve it first)."""
     with _lock:
         if _status.state in ("running", "awaiting_decision"):
             return False
-    return _start(keyword, username, is_owner, reset_total=True, region=region)
+    return _start(keyword, username, is_owner, reset_total=True, country=country, language=language)
 
 
 def continue_scraping() -> bool:
     """Starts another batch for the keyword/user/region a prior batch was awaiting a decision on."""
     with _lock:
-        keyword, username, region = _status.keyword, _status.username, _status.region
+        keyword, username = _status.keyword, _status.username
+        country, language = _status.country, _status.language
         ready = _status.state == "awaiting_decision" and bool(keyword)
-    return _start(keyword, username, _last_is_owner, reset_total=False, region=region) if ready else False
+    return (
+        _start(keyword, username, _last_is_owner, reset_total=False, country=country, language=language)
+        if ready else False
+    )
 
 
 def dismiss_decision() -> bool:
@@ -151,9 +157,11 @@ def stop() -> None:
 _last_is_owner = False  # remembered so continue_scraping() can re-resolve the same user's backend
 
 
-def _start(keyword: str, username: str, is_owner: bool, reset_total: bool, region: str = DEFAULT_REGION) -> bool:
+def _start(keyword: str, username: str, is_owner: bool, reset_total: bool,
+           country: str = DEFAULT_COUNTRY, language: str = DEFAULT_LANGUAGE) -> bool:
     global _thread, _stop_requested, _last_is_owner
-    region = get_region(region).code  # normalizes/validates once, up front
+    country = get_country(country)  # normalizes/validates once, up front
+    language = get_language(language)
     with _lock:
         if _status.state == "running":
             return False
@@ -162,13 +170,14 @@ def _start(keyword: str, username: str, is_owner: bool, reset_total: bool, regio
         _status.state = "running"
         _status.keyword = keyword
         _status.username = username
-        _status.region = region
+        _status.country = country
+        _status.language = language
         _status.queued_this_batch = 0
         if reset_total:
             _status.queued_total = 0
         _status.last_domain = ""
         _status.error = ""
-    _thread = threading.Thread(target=_run_batch, args=(keyword, username, is_owner, region), daemon=True)
+    _thread = threading.Thread(target=_run_batch, args=(keyword, username, is_owner, country, language), daemon=True)
     _thread.start()
     return True
 
@@ -202,9 +211,10 @@ def _should_stop() -> bool:
         return _stop_requested
 
 
-def _run_batch(keyword: str, username: str, is_owner: bool, region: str = DEFAULT_REGION) -> None:
+def _run_batch(keyword: str, username: str, is_owner: bool,
+                country: str = DEFAULT_COUNTRY, language: str = DEFAULT_LANGUAGE) -> None:
     settings = _settings_for_keyword(keyword)
-    region_info = get_region(region)
+    search_url = home_url(country, language)
     backend = data_source.for_user(username, is_owner)
     with _lock:
         _status.backend_name = backend.name
@@ -217,14 +227,14 @@ def _run_batch(keyword: str, username: str, is_owner: bool, region: str = DEFAUL
 
     try:
         with SeenStore(settings.seen_db_path) as store, \
-             BrowserSession(headless=_HEADLESS, lang=region_info.lang) as session:
+             BrowserSession(headless=_HEADLESS, lang=language) as session:
             sink = backend.make_sink()
             sink.ensure_headers()
             writer = LeadWriter(sink, store, settings.batch_size)
 
             pipeline = LeadPipeline(
                 settings=settings,
-                search=GoogleSearch(session, settings.max_pages, home_url=region_info.home_url),
+                search=GoogleSearch(session, settings.max_pages, home_url=search_url),
                 reader=PageReader(session, parser),
                 crawler=SiteCrawler(http, parser, workers=settings.crawl_workers),
                 scorer=scorer,

@@ -158,16 +158,24 @@
             </div>
 
             <div id="scrape-idle-form">
-                <div style="display:grid; grid-template-columns: 2fr 1fr; gap:16px;">
+                <div style="display:grid; grid-template-columns: 1.6fr 1fr 1fr; gap:16px;">
                     <div>
                         <label class="field-label" for="scrape-keyword">Target keyword</label>
                         <input type="text" id="scrape-keyword" placeholder="e.g. peptides, weight loss, SaaS analytics">
                     </div>
                     <div>
-                        <label class="field-label" for="scrape-region">Result region</label>
-                        <select id="scrape-region">
-                            {% for region in regions %}
-                            <option value="{{ region.code }}" {{ 'selected' if region.code == default_region else '' }}>{{ region.label }}</option>
+                        <label class="field-label" for="scrape-country">Result region</label>
+                        <select id="scrape-country">
+                            {% for code, label in countries %}
+                            <option value="{{ code }}" {{ 'selected' if code == default_country else '' }}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="field-label" for="scrape-language">Language</label>
+                        <select id="scrape-language">
+                            {% for code, label in languages %}
+                            <option value="{{ code }}" {{ 'selected' if code == default_language else '' }}>{{ label }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -302,13 +310,15 @@
 <script>
 (function () {
   const csrfToken = {{ csrf_token() | tojson }};
-  const regionLabels = {{ region_labels | tojson }};
+  const countryLabels = {{ country_labels | tojson }};
+  const languageLabels = {{ language_labels | tojson }};
 
   const idleForm = document.getElementById('scrape-idle-form');
   const runningBox = document.getElementById('scrape-running');
   const pausedBox = document.getElementById('scrape-paused');
   const keywordInput = document.getElementById('scrape-keyword');
-  const regionSelect = document.getElementById('scrape-region');
+  const countrySelect = document.getElementById('scrape-country');
+  const languageSelect = document.getElementById('scrape-language');
   const startBtn = document.getElementById('scrape-start-btn');
   const stopBtn = document.getElementById('scrape-stop-btn');
   const countEl = document.getElementById('scrape-count');
@@ -376,7 +386,7 @@
     if (s.state === 'running') {
       setView('running');
       keywordLabelEl.textContent = s.keyword;
-      regionLabelEl.textContent = regionLabels[s.region] || s.region;
+      regionLabelEl.textContent = `${countryLabels[s.country] || s.country} · ${languageLabels[s.language] || s.language}`;
       countEl.textContent = s.queued_this_batch;
       lastDomainEl.textContent = s.last_domain || '—';
       progressBar.style.width = Math.min(100, s.queued_this_batch) + '%';
@@ -450,7 +460,7 @@
     const keyword = keywordInput.value.trim();
     if (!keyword) { keywordInput.focus(); return; }
     startBtn.disabled = true;
-    api('/scrape/start', { keyword, region: regionSelect.value }).then(({ ok, data }) => {
+    api('/scrape/start', { keyword, country: countrySelect.value, language: languageSelect.value }).then(({ ok, data }) => {
       startBtn.disabled = false;
       if (!ok) { alert(data.error || 'Could not start scraping.'); return; }
       applyStatus(data);
