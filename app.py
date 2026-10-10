@@ -180,9 +180,17 @@ def _verify_gmail_app_password(email: str, app_password: str) -> None:
 
 
 def _display_name_for(username: str) -> str:
-    """'ikhlaq-wahid' -> 'Ikhlaq Wahid' — used as the From name for a
-    connected account, so each user signs as themselves rather than a
-    shared static name."""
+    """The user's own chosen name (set at signup, or later via /account/name)
+    if they have one, else a best-effort guess from their username -
+    'ikhlaq-wahid' -> 'Ikhlaq Wahid'. Used as the From name for a connected
+    account and in "Regards, <name>" at the end of outreach emails, so each
+    user signs as themselves. The fallback guess is what you'd want for an
+    owner-style username, but for a self-signed-up account the username IS
+    the Gmail address - without a stored full_name, that fallback just
+    title-cases the raw email instead of showing a real name."""
+    user = db.get_user_by_username(username)
+    if user and user.get("full_name"):
+        return user["full_name"]
     return username.replace("-", " ").replace("_", " ").title() or username
 
 
@@ -365,8 +373,18 @@ class ResetPasswordForm(FlaskForm):
     )
 
 
-class ResetGmailAppPasswordForm(FlaskForm):
-    app_password = PasswordField("New App Password", validators=[DataRequired()])
+class SignupForm(FlaskForm):
+    full_name = StringField("Your name", validators=[DataRequired()])
+    email = StringField("Gmail address", validators=[DataRequired()])
+    app_password = PasswordField("Gmail App Password", validators=[DataRequired()])
+    password = PasswordField("Create a password", validators=[DataRequired(), Length(min=8)])
+    confirm_password = PasswordField(
+        "Confirm password", validators=[DataRequired(), EqualTo("password", message="Passwords must match.")]
+    )
+
+
+class UpdateNameForm(FlaskForm):
+    full_name = StringField("Your name", validators=[DataRequired()])
 
 
 class CampaignForm(FlaskForm):
@@ -413,16 +431,21 @@ def signup():
     """Self-service account creation: a Gmail address + its App Password
     is both verified (live SMTP login) and immediately connected as the
     account's sending identity - one step instead of create-account-then-
-    separately-onboard. That same App Password also becomes this user's
-    login password (see login()'s check_password_hash), so there's exactly
-    one secret to keep track of, not two."""
+    separately-onboard. The App Password is only ever used for that Gmail
+    connection - login uses a password the person chooses here themselves
+    (entered twice, see SignupForm's EqualTo check), kept entirely separate
+    so changing one never affects the other. full_name is what shows as
+    the From name and in "Regards, <name>" on outreach emails - without
+    it, _display_name_for() had nothing to work with but the username,
+    which for this signup path IS the Gmail address."""
     if require_login():
         return redirect(url_for("index"))
 
-    form = ManualGmailForm()
+    form = SignupForm()
     if form.validate_on_submit():
         email = form.email.data.strip().lower()
         app_password = form.app_password.data
+        full_name = form.full_name.data.strip()
 
         connected_username = db.find_username_by_connected_email(email)
         if connected_username:
@@ -439,15 +462,35 @@ def signup():
             flash(f"Could not verify that Gmail address and App Password: {e}")
             return render_template("signup.html", form=form)
 
-        user_id = db.create_user(email, generate_password_hash(app_password), role="member", created_by="self-signup")
+        user_id = db.create_user(
+            email, generate_password_hash(form.password.data),
+            role="member", created_by="self-signup", full_name=full_name,
+        )
         db.save_manual_email_account(email, email, app_password)
         session["user_id"] = user_id
         session["username"] = email
         session["role"] = "member"
-        flash(f"Welcome! {email} is connected and ready to go.")
+        flash(f"Welcome, {full_name}! {email} is connected and ready to go.")
         return redirect(url_for("index"))
 
     return render_template("signup.html", form=form)
+
+
+@app.route("/account/name", methods=["POST"])
+def update_name():
+    """Lets anyone already logged in set or change the name shown as the
+    From name and in "Regards, <name>" on their outreach emails (see
+    _display_name_for) - reachable any time, not just at signup, so an
+    account created before this field existed (or a typo) isn't stuck."""
+    if not require_login():
+        return redirect(url_for("login"))
+    form = UpdateNameForm()
+    if form.validate_on_submit():
+        db.update_full_name(session["username"], form.full_name.data.strip())
+        flash("Name updated.")
+    else:
+        flash("Enter a name.")
+    return redirect(url_for("users"))
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
@@ -474,40 +517,24 @@ def forgot_password():
 
 @app.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
+    """Login password only - the App Password that connects someone's
+    Gmail is a completely separate secret now (see signup()), so forgetting
+    your login doesn't touch it, and this form is the same for everyone
+    regardless of how they connected. To change a stale/revoked App
+    Password, reconnect Gmail from Compose instead (/connect/gmail-manual)."""
     token_row = db.get_valid_password_reset_token(token)
     if not token_row:
         flash("That reset link is invalid or has expired — request a new one.")
         return redirect(url_for("forgot_password"))
 
     username = token_row["username"]
-    manual_account = db.get_manual_email_account(username)
-
-    # A self-signed-up account's password IS its Gmail App Password (see
-    # signup()) - resetting it to an arbitrary string would silently break
-    # sending, so this path asks for a NEW App Password instead, verifies
-    # it the same way signup does, and updates both records together.
-    if manual_account:
-        form = ResetGmailAppPasswordForm()
-        if form.validate_on_submit():
-            try:
-                _verify_gmail_app_password(manual_account["email"], form.app_password.data)
-            except Exception as e:
-                flash(f"Could not verify that App Password: {e}")
-                return render_template("reset_password.html", form=form, email=manual_account["email"])
-            db.update_user_password(username, generate_password_hash(form.app_password.data))
-            db.save_manual_email_account(username, manual_account["email"], form.app_password.data)
-            db.mark_password_reset_token_used(token)
-            flash("App Password updated — log in with it.")
-            return redirect(url_for("login"))
-        return render_template("reset_password.html", form=form, email=manual_account["email"])
-
     form = ResetPasswordForm()
     if form.validate_on_submit():
         db.update_user_password(username, generate_password_hash(form.password.data))
         db.mark_password_reset_token_used(token)
         flash("Password updated — log in with your new password.")
         return redirect(url_for("login"))
-    return render_template("reset_password.html", form=form, email=None)
+    return render_template("reset_password.html", form=form)
 
 
 @app.route("/onboarding", methods=["GET", "POST"])
@@ -540,7 +567,7 @@ def onboarding():
 # hits (forgot/reset password, unsubscribe, tracking pixels/links).
 _ONBOARDING_EXEMPT_ENDPOINTS = {
     "login", "signup", "logout", "onboarding", "forgot_password", "reset_password",
-    "users", "delete_user", "leave_access",
+    "users", "delete_user", "leave_access", "update_name",
     "connect_google", "connect_google_callback", "connect_google_disconnect",
     "connect_gmail_manual", "connect_gmail_manual_disconnect",
     "unsubscribe", "static", None,
@@ -590,10 +617,13 @@ def users():
     if not require_login():
         return redirect(url_for("login"))
 
+    me = db.get_user_by_username(session["username"])
+    name_form = UpdateNameForm(full_name=(me or {}).get("full_name") or "")
     return render_template(
         "users.html",
         users=db.list_users() if require_owner() else None,
         current_user_id=session["user_id"], is_owner=require_owner(),
+        name_form=name_form,
     )
 
 

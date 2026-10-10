@@ -164,6 +164,13 @@ _COLUMN_MIGRATIONS = (
     # (see _backfill_campaign_usernames) so that history stays attributed
     # to whoever actually sent it instead of silently vanishing.
     "ALTER TABLE campaigns ADD COLUMN username TEXT",
+    # The name shown in outgoing emails ("Regards, <name>") and the From
+    # header - without it, _display_name_for() had nothing but the
+    # username to work with, which for a self-signed-up account IS the
+    # Gmail address, so emails signed off with a mangled version of
+    # someone's own email address instead of a real name. Set at signup
+    # (see SignupForm) or editable afterward (see /account/name).
+    "ALTER TABLE users ADD COLUMN full_name TEXT",
 )
 
 
@@ -563,12 +570,12 @@ def mark_all_replies_seen(username: str | None = None):
 # ---------------------------------------------------------------------------
 
 def create_user(username: str, password_hash: str, role: str = "member",
-                 created_by: str = None) -> int:
+                 created_by: str = None, full_name: str = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO users (username, password_hash, role, created_at, created_by) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (username, password_hash, role, now_iso(), created_by),
+            "INSERT INTO users (username, password_hash, role, created_at, created_by, full_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (username, password_hash, role, now_iso(), created_by, full_name),
         )
         return cur.lastrowid
 
@@ -588,6 +595,11 @@ def list_users():
 def update_user_password(username: str, password_hash: str) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE users SET password_hash=? WHERE username=?", (password_hash, username))
+
+
+def update_full_name(username: str, full_name: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET full_name=? WHERE username=?", (full_name, username))
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 """app.py's /signup route - self-service account creation: a Gmail
-address + App Password is verified live, then becomes BOTH the account's
-sending identity (manual_email_account) and its login password, in one
-step. _verify_gmail_app_password is mocked so this never opens a real
-SMTP connection.
+address + App Password is verified live and connected as the account's
+sending identity, while full_name and a separately-chosen password (typed
+twice, must match) set up the account itself. _verify_gmail_app_password
+is mocked so this never opens a real SMTP connection.
 
 db.DB_PATH is pointed at a throwaway file BEFORE app.py is ever imported,
 and again in setUp() for every test - see test_forgot_password_route.py's
@@ -24,6 +24,20 @@ import app as app_module
 
 app_module.app.config["WTF_CSRF_ENABLED"] = False
 
+_FORM_DEFAULTS = {
+    "full_name": "New Person",
+    "email": "newperson@gmail.com",
+    "app_password": "abcd efgh ijkl mnop",
+    "password": "a-login-password",
+    "confirm_password": "a-login-password",
+}
+
+
+def _signup_data(**overrides) -> dict:
+    data = dict(_FORM_DEFAULTS)
+    data.update(overrides)
+    return data
+
 
 class SignupRouteTests(unittest.TestCase):
     def setUp(self):
@@ -35,11 +49,7 @@ class SignupRouteTests(unittest.TestCase):
     def test_valid_credentials_create_an_account_and_log_the_user_in(self):
         client = app_module.app.test_client()
         with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
-            resp = client.post(
-                "/signup",
-                data={"email": "NewPerson@Gmail.com", "app_password": "abcd efgh ijkl mnop"},
-                follow_redirects=False,
-            )
+            resp = client.post("/signup", data=_signup_data(email="NewPerson@Gmail.com"), follow_redirects=False)
 
         verify.assert_called_once_with("newperson@gmail.com", "abcd efgh ijkl mnop")
         self.assertEqual(resp.status_code, 302)
@@ -48,27 +58,45 @@ class SignupRouteTests(unittest.TestCase):
         user = db.get_user_by_username("newperson@gmail.com")
         self.assertIsNotNone(user)
         self.assertEqual(user["role"], "member")
+        self.assertEqual(user["full_name"], "New Person")
 
         manual = db.get_manual_email_account("newperson@gmail.com")
         self.assertEqual(manual["email"], "newperson@gmail.com")
         self.assertEqual(manual["app_password"], "abcd efgh ijkl mnop")
 
-    def test_the_app_password_doubles_as_the_login_password(self):
+    def test_login_uses_the_chosen_password_not_the_app_password(self):
         client = app_module.app.test_client()
         with mock.patch.object(app_module, "_verify_gmail_app_password"):
-            client.post("/signup", data={"email": "newperson@gmail.com", "app_password": "my-app-password"})
+            client.post("/signup", data=_signup_data())
 
-        login_resp = client.post(
-            "/login", data={"username": "newperson@gmail.com", "password": "my-app-password"},
+        # The App Password must NOT work as a login password - the two are
+        # deliberately separate secrets now. A rejected login re-renders
+        # the form (200); only a successful one redirects (302).
+        wrong = client.post(
+            "/login", data={"username": "newperson@gmail.com", "password": "abcd efgh ijkl mnop"},
+        )
+        self.assertEqual(wrong.status_code, 200)
+
+        right = client.post(
+            "/login", data={"username": "newperson@gmail.com", "password": "a-login-password"},
             follow_redirects=False,
         )
-        self.assertEqual(login_resp.status_code, 302)
-        self.assertEqual(login_resp.headers["Location"], "/")  # straight to Compose, no onboarding needed
+        self.assertEqual(right.status_code, 302)
+        self.assertEqual(right.headers["Location"], "/")  # straight to Compose, no onboarding needed
+
+    def test_mismatched_password_confirmation_creates_no_account(self):
+        client = app_module.app.test_client()
+        with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
+            resp = client.post("/signup", data=_signup_data(confirm_password="something-else"))
+
+        verify.assert_not_called()
+        self.assertEqual(resp.status_code, 200)  # re-rendered with an error
+        self.assertIsNone(db.get_user_by_username("newperson@gmail.com"))
 
     def test_credentials_that_fail_live_verification_create_no_account(self):
         client = app_module.app.test_client()
         with mock.patch.object(app_module, "_verify_gmail_app_password", side_effect=Exception("bad credentials")):
-            resp = client.post("/signup", data={"email": "nope@gmail.com", "app_password": "wrong"})
+            resp = client.post("/signup", data=_signup_data(email="nope@gmail.com"))
 
         self.assertEqual(resp.status_code, 200)  # re-rendered with an error
         self.assertIsNone(db.get_user_by_username("nope@gmail.com"))
@@ -76,10 +104,7 @@ class SignupRouteTests(unittest.TestCase):
     def test_an_already_registered_email_is_sent_to_login_instead(self):
         client = app_module.app.test_client()
         with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
-            resp = client.post(
-                "/signup", data={"email": "existing@gmail.com", "app_password": "whatever"},
-                follow_redirects=False,
-            )
+            resp = client.post("/signup", data=_signup_data(email="existing@gmail.com"), follow_redirects=False)
 
         verify.assert_not_called()  # never even attempted - no credentials leaked to a duplicate check
         self.assertEqual(resp.status_code, 302)
@@ -98,7 +123,7 @@ class SignupRouteTests(unittest.TestCase):
         client = app_module.app.test_client()
         with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
             resp = client.post(
-                "/signup", data={"email": "ghost@gmail.com", "app_password": "new-pass"},
+                "/signup", data=_signup_data(email="ghost@gmail.com", app_password="new-pass"),
                 follow_redirects=False,
             )
 

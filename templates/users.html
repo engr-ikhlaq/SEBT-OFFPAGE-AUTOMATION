@@ -76,8 +76,22 @@
         <div class="panel">
             <h2>Your account</h2>
             <p class="hint" style="margin-top:-8px; margin-bottom:16px;">
-                Logged in as <strong style="color:var(--text);">{{ session.username }}</strong>. Leaving removes your login entirely —
-                you'd need someone with access to add you back.
+                Logged in as <strong style="color:var(--text);">{{ session.username }}</strong>.
+            </p>
+
+            <label class="field-label" for="{{ name_form.full_name.id }}">Your name</label>
+            <form method="POST" action="{{ url_for('update_name') }}" style="display:flex; gap:10px; align-items:flex-start; margin-bottom:8px;">
+                {{ name_form.csrf_token }}
+                {{ name_form.full_name(id=name_form.full_name.id, placeholder="e.g. Ikhlaq Wahid", style="margin-bottom:0;") }}
+                <button type="submit" class="btn-primary" style="width:auto; padding:12px 20px; flex-shrink:0;">Save</button>
+            </form>
+            {% if name_form.full_name.errors %}
+            <div class="field-errors" style="margin-top:-6px;">{{ name_form.full_name.errors[0] }}</div>
+            {% endif %}
+            <p class="hint" style="margin:0 0 20px;">Shown as "Regards, {your name}" and as the sender name on emails you send.</p>
+
+            <p class="hint" style="margin:0 0 16px;">
+                Leaving removes your login entirely — you'd need someone with access to add you back.
             </p>
             <form method="POST" action="{{ url_for('leave_access') }}" style="margin:0;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
