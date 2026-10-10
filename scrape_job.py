@@ -200,7 +200,7 @@ def _settings_for_keyword(keyword: str) -> Settings:
     return Settings(
         spreadsheet_id="unused-see-data-source-for-user",
         seen_db_path=Path(os.environ.get("SEEN_DB_PATH", "seen_domains.db")),
-        max_pages=int(os.environ.get("SCRAPE_MAX_PAGES", "1")),
+        max_pages=int(os.environ.get("SCRAPE_MAX_PAGES", "5")),
         keywords=(keyword,),
     )
 
