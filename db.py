@@ -649,6 +649,23 @@ def delete_user(user_id: int) -> bool:
         return True
 
 
+def purge_orphaned_connections(username: str) -> None:
+    """Deletes any google_accounts/manual_email_accounts/user_sheets row
+    for `username` that has no matching users row. Self-signup keys these
+    by the email itself, so if a deleted account's connection rows ever
+    survived (e.g. from data created before this cleanup existed in
+    delete_user(), or any other gap), the email would stay permanently
+    blocked from signing up again - "X already has an account" - with no
+    account to log into. Called from signup() right before it would
+    otherwise reject an email as already taken."""
+    with get_conn() as conn:
+        if conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+            return  # a real account exists - nothing orphaned to clean up
+        conn.execute("DELETE FROM google_accounts WHERE username=?", (username,))
+        conn.execute("DELETE FROM manual_email_accounts WHERE username=?", (username,))
+        conn.execute("DELETE FROM user_sheets WHERE username=?", (username,))
+
+
 # ---------------------------------------------------------------------------
 # Connected Google accounts (one per app user — see google_oauth.py)
 # ---------------------------------------------------------------------------

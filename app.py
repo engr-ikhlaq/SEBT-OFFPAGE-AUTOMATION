@@ -424,7 +424,12 @@ def signup():
         email = form.email.data.strip().lower()
         app_password = form.app_password.data
 
-        if db.get_user_by_username(email) or db.find_username_by_connected_email(email):
+        connected_username = db.find_username_by_connected_email(email)
+        if connected_username:
+            db.purge_orphaned_connections(connected_username)  # no-op if that account still exists
+            connected_username = db.find_username_by_connected_email(email)
+
+        if db.get_user_by_username(email) or connected_username:
             flash(f"{email} already has an account — log in instead.")
             return redirect(url_for("login"))
 

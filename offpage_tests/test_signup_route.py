@@ -87,6 +87,27 @@ class SignupRouteTests(unittest.TestCase):
         # The ORIGINAL account must be untouched by the duplicate attempt.
         self.assertEqual(db.get_manual_email_account("existing")["app_password"], "old-pass")
 
+    def test_an_orphaned_connection_from_a_deleted_account_does_not_block_resignup(self):
+        """If an account was removed but its manual_email_accounts row
+        somehow survived (see db.purge_orphaned_connections), that email
+        must not be permanently stuck on "already has an account" with no
+        account left to log into."""
+        db.save_manual_email_account("ghost@gmail.com", "ghost@gmail.com", "old-pass")
+        self.assertIsNone(db.get_user_by_username("ghost@gmail.com"))  # no real account - just the orphan
+
+        client = app_module.app.test_client()
+        with mock.patch.object(app_module, "_verify_gmail_app_password") as verify:
+            resp = client.post(
+                "/signup", data={"email": "ghost@gmail.com", "app_password": "new-pass"},
+                follow_redirects=False,
+            )
+
+        verify.assert_called_once_with("ghost@gmail.com", "new-pass")
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.headers["Location"], "/")
+        self.assertIsNotNone(db.get_user_by_username("ghost@gmail.com"))
+        self.assertEqual(db.get_manual_email_account("ghost@gmail.com")["app_password"], "new-pass")
+
     def test_an_already_logged_in_user_is_redirected_away_from_signup(self):
         client = app_module.app.test_client()
         with client.session_transaction() as sess:
