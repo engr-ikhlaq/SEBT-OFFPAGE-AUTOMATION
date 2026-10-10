@@ -1255,4 +1255,11 @@ if __name__ == "__main__":
     # take a couple of seconds - without this, Flask's dev server handles
     # one request at a time, so a second user (or a reverse-proxy/tunnel's
     # own probe requests) queues up behind it and can time out.
-    app.run(debug=True, port=5000, threaded=True)
+    # use_reloader=False: Werkzeug's reloader runs the app in a CHILD
+    # process it restarts on file changes - an IDE debugger attached to
+    # the process you launched never sees that child, so breakpoints
+    # silently never hit. PORT defaults to 5000 but the VS Code launch
+    # config (.vscode/launch.json) sets it to 5050 to match the ngrok
+    # tunnel already pointed at that port.
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(debug=True, port=port, threaded=True, use_reloader=False)
