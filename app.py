@@ -743,6 +743,14 @@ def connect_sheet():
         flash(f"That Sheet has no worksheet named '{worksheet_name}'.")
         return redirect(url_for("index"))
     except gspread.exceptions.APIError as e:
+        if "must not be an Office file" in str(e):
+            flash(
+                "That's an uploaded Excel file (.xlsx), not a native Google Sheet — Google's "
+                "Sheets API can only read/write real Sheets, even though Drive lets you preview "
+                "an Excel file as one. Open it, then File → Save as Google Sheets to make a "
+                "real copy, and connect that copy's URL instead (your original file is untouched)."
+            )
+            return redirect(url_for("index"))
         email = sheets_source.service_account_email()
         flash(f"Could not open that Sheet ({e}). Make sure it's shared as Editor with {email}.")
         return redirect(url_for("index"))
