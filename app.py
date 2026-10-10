@@ -45,6 +45,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 import auto_outreach
 import google_oauth
+import outreach_job
 import scrape_job
 from mailer import GmailApiSender, MailerConfig, SmtpSender, send_batch
 from tracking import tracking_bp
@@ -972,36 +973,50 @@ def delete_lead_journey(recipient_id):
 
 @app.route("/outreach/run", methods=["POST"])
 def run_outreach():
-    if not require_login():
-        return redirect(url_for("login"))
-
+    """Starts a background outreach-sending run and returns immediately -
+    one email at a time with a throttled delay between each (see
+    mailer._throttle_delay) easily takes minutes for a real batch, so the
+    dashboard polls /outreach/status for live progress instead of this
+    request blocking until every send finishes. See outreach_job.py."""
+    if (refusal := _require_login_json()) is not None:
+        return refusal
     try:
         cfg, sender = sender_for_current_user()
         backend = data_source.for_user(session["username"], require_owner())
-        result = auto_outreach.send_pending_leads(get_public_base_url(), cfg, sender, backend)
-        flash(
-            f"Outreach run complete — sent {len(result['sent'])}, "
-            f"failed {len(result['failed'])}, skipped {len(result['skipped'])}."
-        )
     except Exception as e:
-        flash(f"Outreach run failed: {e}")
-
-    return redirect(url_for("dashboard"))
+        return {"error": str(e)}, 500
+    if not outreach_job.start(get_public_base_url(), cfg, sender, backend):
+        return {"error": "An outreach run is already in progress."}, 409
+    return outreach_job.get_status()
 
 
 @app.route("/outreach/followups", methods=["POST"])
 def run_followups():
-    if not require_login():
-        return redirect(url_for("login"))
-
+    """Same background-job treatment as /outreach/run, for the Follow-ups button."""
+    if (refusal := _require_login_json()) is not None:
+        return refusal
     try:
         cfg, sender = sender_for_current_user()
-        result = auto_outreach.send_due_followups(get_public_base_url(), cfg, sender)
-        flash(f"Follow-ups complete — sent {len(result['sent'])}, failed {len(result['failed'])}.")
     except Exception as e:
-        flash(f"Follow-up run failed: {e}")
+        return {"error": str(e)}, 500
+    if not outreach_job.start_followups(get_public_base_url(), cfg, sender):
+        return {"error": "A run is already in progress."}, 409
+    return outreach_job.get_status()
 
-    return redirect(url_for("dashboard"))
+
+@app.route("/outreach/status")
+def outreach_status():
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    return outreach_job.get_status()
+
+
+@app.route("/outreach/stop", methods=["POST"])
+def outreach_stop():
+    if (refusal := _require_login_json()) is not None:
+        return refusal
+    outreach_job.stop()
+    return outreach_job.get_status()
 
 
 # ---------------------------------------------------------------------------

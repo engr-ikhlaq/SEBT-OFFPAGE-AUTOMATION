@@ -163,12 +163,20 @@ def _render_email_html(body_html: str, *, pixel_url_template: str, unsubscribe_u
     )
 
 
-def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit: int | None = None) -> dict:
+def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit: int | None = None,
+                        on_progress=None, should_stop=None) -> dict:
     """Sends the outreach email to every unsent, valid-email lead in
     `backend` — the caller's own data_source.for_user() result, so this
     only ever touches their own leads.
 
     cfg/sender: the sending identity to use — see module docstring.
+    on_progress: optional callback(done, total, email, status) after each
+        lead is processed — status is "sent", "failed", or "skipped". Lets
+        a caller (e.g. outreach_job.py) report live progress for a run
+        that can take minutes (one email at a time, throttled).
+    should_stop: optional callback() -> bool, checked before each lead;
+        if it returns True, the run stops there — whatever was already
+        sent stays sent, same as the scrape job's Stop button.
     Returns {"sent": [...], "failed": [...], "skipped": [...]}.
     """
     from link_paths import click_url, open_pixel_url, unsubscribe_url as build_unsub_url
@@ -179,7 +187,10 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
 
     summary = {"sent": [], "failed": [], "skipped": []}
 
-    for lead in leads:
+    for done, lead in enumerate(leads, start=1):
+        if should_stop is not None and should_stop():
+            break
+
         email = lead.get("Email", "").strip()
         domain = lead.get("Domain", "").strip()
         url = lead.get("URL", "").strip() or f"https://{domain}"
@@ -188,6 +199,8 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
 
         if not email:
             summary["skipped"].append(row)
+            if on_progress is not None:
+                on_progress(done, len(leads), "", "skipped")
             continue
 
         subject_template, body_lines = _build_outreach_message()
@@ -229,6 +242,8 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
             db.mark_recipient_result(email, campaign_id, "failed", error=str(exc))
             backend.write_result(row, status="failed", error=str(exc))
             summary["failed"].append((email, str(exc)))
+            if on_progress is not None:
+                on_progress(done, len(leads), email, "failed")
             continue
 
         if result["sent"]:
@@ -237,11 +252,15 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, limit:
             backend.write_result(row, status="sent")
             summary["sent"].append(email)
             log.info("Outreach sent to %s (%s)", email, domain)
+            if on_progress is not None:
+                on_progress(done, len(leads), email, "sent")
         else:
             _, err = result["failed"][0]
             db.mark_recipient_result(email, campaign_id, "failed", error=err)
             backend.write_result(row, status="failed", error=err)
             summary["failed"].append((email, err))
+            if on_progress is not None:
+                on_progress(done, len(leads), email, "failed")
 
     return summary
 

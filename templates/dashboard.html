@@ -68,14 +68,31 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">{{ icon_search(14) }} Check replies</button>
             </form>
-            <form method="POST" action="{{ url_for('run_followups') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">{{ icon_clock(14) }} Follow-ups</button>
-            </form>
-            <form method="POST" action="{{ url_for('run_outreach') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="hero-pill cta" style="border:none; cursor:pointer;">{{ icon_mail(14) }} Send to new leads</button>
-            </form>
+            <button type="button" id="followups-btn" class="hero-pill" style="border:none; cursor:pointer;">{{ icon_clock(14) }} Follow-ups</button>
+            <button type="button" id="send-outreach-btn" class="hero-pill cta" style="border:none; cursor:pointer;">{{ icon_mail(14) }} Send to new leads</button>
+        </div>
+
+        <!-- live progress for Follow-ups / Send to new leads — outreach_job.py
+             runs these in the background (one email at a time, throttled),
+             so this polls /outreach/status instead of the page just sitting
+             on a blocking request with no feedback for however long it takes.
+             Same gauge look as the Outreach Reply Rate widget below, just
+             driven live by JS instead of rendered once server-side. -->
+        <div id="outreach-progress" class="widget widget-gauge outreach-gauge" style="display:none;">
+            <div class="gauge-icons">{{ icon_mail(14) }} {{ icon_eye(14) }} {{ icon_message(14) }} {{ icon_clock(14) }}</div>
+            <div class="gauge-wrap">
+                <svg width="130" height="75" viewBox="0 0 120 70">
+                    <path d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="9" stroke-linecap="round"/>
+                    <path id="outreach-gauge-arc" d="M 10 65 A 50 50 0 0 1 110 65" fill="none" stroke="#ff8a3d" stroke-width="9"
+                          stroke-linecap="round" stroke-dasharray="157" stroke-dashoffset="157"/>
+                    <line id="outreach-gauge-needle" x1="60" y1="65" x2="10" y2="65" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="60" cy="65" r="4" fill="#fff"/>
+                </svg>
+                <div class="gauge-value" id="outreach-gauge-value">0%</div>
+            </div>
+            <div class="gauge-label" id="outreach-progress-label">Sending…</div>
+            <div class="gauge-sub" id="outreach-progress-count"></div>
+            <button type="button" id="outreach-stop-btn" style="margin-top:10px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.08); color:#fff; padding:6px 14px; border-radius:999px; cursor:pointer; font-size:12px;">Stop</button>
         </div>
 
         <!-- stat widgets: 3 small cards + a tall gauge spanning both rows,
@@ -327,6 +344,121 @@
         }
       }
     });
+</script>
+
+<script>
+(function () {
+  const csrfToken = {{ csrf_token() | tojson }};
+
+  const followupsBtn = document.getElementById('followups-btn');
+  const sendBtn = document.getElementById('send-outreach-btn');
+  const progressBox = document.getElementById('outreach-progress');
+  const progressLabel = document.getElementById('outreach-progress-label');
+  const progressCount = document.getElementById('outreach-progress-count');
+  const gaugeArc = document.getElementById('outreach-gauge-arc');
+  const gaugeNeedleEl = document.getElementById('outreach-gauge-needle');
+  const gaugeValueEl = document.getElementById('outreach-gauge-value');
+  const stopBtn = document.getElementById('outreach-stop-btn');
+
+  let pollTimer = null;
+  let terminalShown = false;
+
+  function api(path) {
+    return fetch(path, { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })));
+  }
+
+  function formatElapsed(seconds) {
+    seconds = seconds || 0;
+    if (seconds < 60) return `${seconds.toFixed(0)}s`;
+    return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  }
+
+  function setButtonsDisabled(disabled) {
+    followupsBtn.disabled = disabled;
+    sendBtn.disabled = disabled;
+  }
+
+  // Same geometry as _gauge_needle() in app.py, ported to JS since this
+  // gauge updates live from polling rather than being rendered once
+  // server-side. pct is 0-1; the arc's total length (157) matches the
+  // "M 10 65 A 50 50 0 0 1 110 65" path already in the markup.
+  function updateGauge(pct) {
+    pct = Math.max(0, Math.min(1, pct));
+    gaugeArc.setAttribute('stroke-dashoffset', (157 - 157 * pct).toFixed(1));
+    const angle = Math.PI * (1 - pct);
+    gaugeNeedleEl.setAttribute('x2', (60 + 50 * Math.cos(angle)).toFixed(1));
+    gaugeNeedleEl.setAttribute('y2', (65 - 50 * Math.sin(angle)).toFixed(1));
+    gaugeValueEl.textContent = Math.round(pct * 100) + '%';
+  }
+
+  function applyStatus(s) {
+    if (s.state === 'running') {
+      progressBox.style.display = 'flex';
+      setButtonsDisabled(true);
+      progressLabel.textContent = s.kind === 'followups' ? 'Sending follow-ups…' : 'Sending to new leads…';
+      if (s.total > 0) {
+        updateGauge(s.done / s.total);
+        progressCount.textContent = `${s.done} of ${s.total} sent · ${formatElapsed(s.elapsed_seconds)}`;
+      } else {
+        updateGauge(0);
+        progressCount.textContent = `Starting… · ${formatElapsed(s.elapsed_seconds)}`;
+      }
+      terminalShown = false;
+      startPolling();
+    } else if (s.state === 'finished' || s.state === 'stopped' || s.state === 'error') {
+      setButtonsDisabled(false);
+      progressBox.style.display = 'none';
+      stopPolling();
+      if (!terminalShown) {
+        terminalShown = true;
+        if (s.state === 'error') {
+          alert(`Run stopped because of an error: ${s.error || 'unknown error'}\n\nSent ${s.sent_count}, failed ${s.failed_count} before it happened.`);
+        } else {
+          alert(`${s.state === 'stopped' ? 'Stopped' : 'Done'} — sent ${s.sent_count}, failed ${s.failed_count}.`);
+        }
+        window.location.reload();  // picks up the newly-sent entries in the journey list below
+      }
+    } else {
+      setButtonsDisabled(false);
+      progressBox.style.display = 'none';
+      stopPolling();
+    }
+  }
+
+  function poll() {
+    fetch('/outreach/status').then(r => r.json()).then(applyStatus).catch(() => {});
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(poll, 1000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  followupsBtn.addEventListener('click', () => {
+    setButtonsDisabled(true);
+    api('/outreach/followups').then(({ ok, data }) => {
+      if (!ok) { alert(data.error || 'Could not start follow-ups.'); setButtonsDisabled(false); return; }
+      applyStatus(data);
+    });
+  });
+
+  sendBtn.addEventListener('click', () => {
+    setButtonsDisabled(true);
+    api('/outreach/run').then(({ ok, data }) => {
+      if (!ok) { alert(data.error || 'Could not start sending.'); setButtonsDisabled(false); return; }
+      applyStatus(data);
+    });
+  });
+
+  stopBtn.addEventListener('click', () => { api('/outreach/stop').then(({ data }) => applyStatus(data)); });
+
+  poll();  // picks up a run already in progress from a previous page load
+})();
 </script>
 
 </body>

@@ -104,6 +104,12 @@ a { color: inherit; }
   padding: 9px 16px; border-radius: 999px;
 }
 .hero-pill.cta { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+.hero-pill:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- live progress for an outreach_job.py run (Follow-ups / Send to new leads) -
+   same gauge card as Outreach Reply Rate (.widget-gauge), just standalone
+   instead of inside .widget-section's grid. ---- */
+.outreach-gauge { max-width: 220px; margin-bottom: 18px; }
 
 /* ---- widget grid: top row (3 cards) + a tall gauge card spanning both rows,
    bottom row (2 wider cards) — matches the reference's dark-card metrics area.
