@@ -2,81 +2,91 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Manage Access</title>
+    <title>Manage Access — Guest Posting Automation</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
-<body class="app-page">
+<body class="dashboard-bg">
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout %}
+<div class="shell">
 
-<div class="topbar">
-    <div>
-        <h1>Manage Access</h1>
-        <div class="sub">Who can log in to this dashboard</div>
+    <div class="sidebar">
+        <div class="logo">M</div>
+        <a href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
+        <a href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
+        <a class="active" href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>
+        <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
     </div>
-    <div class="nav-links">
-        <a href="{{ url_for('dashboard') }}">&larr; Dashboard</a>
-        <a href="{{ url_for('logout') }}">Log out</a>
+
+    <div class="main">
+        <div class="topbar">
+            <div>
+                <div class="brand-line"><b>Guest Posting Automation</b> &middot; Manage Access</div>
+                <h1>Who can log in</h1>
+                <div class="sub">Add, remove, or leave this dashboard</div>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+        {% endif %}
+        {% endwith %}
+
+        {% if is_owner %}
+        <div class="panel">
+            <h2>Invite someone</h2>
+            <p class="hint" style="margin-top:-8px;">
+                New people create their own account by signing up with their own Gmail — share this link:
+            </p>
+            <input type="text" readonly value="{{ url_for('signup', _external=True) }}" onclick="this.select()"
+                   style="width:100%; background:var(--shell); border:1px solid var(--card-border); border-radius:var(--radius-sm); padding:10px 12px; font-size:13px; color:var(--text);">
+        </div>
+
+        <div class="panel">
+            <h2>Everyone with access</h2>
+            <table>
+                <thead>
+                <tr><th>Username</th><th>Role</th><th>Added</th><th>Added by</th><th></th></tr>
+                </thead>
+                <tbody>
+                {% for u in users %}
+                <tr>
+                    <td>{{ u.username }}{% if u.id == current_user_id %} (you){% endif %}</td>
+                    <td><span class="role-badge">{{ u.role }}</span></td>
+                    <td>{{ u.created_at[:19].replace('T', ' ') }} UTC</td>
+                    <td>{{ u.created_by or '—' }}</td>
+                    <td>
+                        {% if u.id != current_user_id %}
+                        <form method="POST" action="{{ url_for('delete_user', user_id=u.id) }}" style="margin:0;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" onclick="return confirm('Remove access for {{ u.username }}?')">Remove</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="hint" style="margin-bottom:18px;">Only the owner account can add or remove other people's access.</div>
+        {% endif %}
+
+        <div class="panel">
+            <h2>Your account</h2>
+            <p class="hint" style="margin-top:-8px; margin-bottom:16px;">
+                Logged in as <strong style="color:var(--text);">{{ session.username }}</strong>. Leaving removes your login entirely —
+                you'd need someone with access to add you back.
+            </p>
+            <form method="POST" action="{{ url_for('leave_access') }}" style="margin:0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" onclick="return confirm('Leave this app? Your own access will be removed immediately.')">
+                    Leave access
+                </button>
+            </form>
+        </div>
     </div>
-</div>
-
-{% with messages = get_flashed_messages() %}
-{% if messages %}
-<div class="flash">{{ messages[0] }}</div>
-{% endif %}
-{% endwith %}
-
-{% if is_owner %}
-<div class="form-card">
-    <h2 style="margin-top:0;">Invite someone</h2>
-    <p style="color:var(--muted); font-size:13px; margin:0 0 10px;">
-        New people create their own account by signing up with their own Gmail — share this link:
-    </p>
-    <input type="text" readonly value="{{ url_for('signup', _external=True) }}" onclick="this.select()"
-           style="width:100%; background:var(--shell); border:1px solid var(--card-border); border-radius:var(--radius-sm); padding:10px 12px; font-size:13px;">
-</div>
-
-<div class="panel">
-    <h2>Everyone with access</h2>
-    <table>
-        <thead>
-        <tr><th>Username</th><th>Role</th><th>Added</th><th>Added by</th><th></th></tr>
-        </thead>
-        <tbody>
-        {% for u in users %}
-        <tr>
-            <td>{{ u.username }}{% if u.id == current_user_id %} (you){% endif %}</td>
-            <td><span class="role-badge">{{ u.role }}</span></td>
-            <td>{{ u.created_at[:19].replace('T', ' ') }} UTC</td>
-            <td>{{ u.created_by or '—' }}</td>
-            <td>
-                {% if u.id != current_user_id %}
-                <form method="POST" action="{{ url_for('delete_user', user_id=u.id) }}" style="margin:0;">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" onclick="return confirm('Remove access for {{ u.username }}?')">Remove</button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% else %}
-<div class="hint" style="margin-bottom:18px;">Only the owner account can add or remove other people's access.</div>
-{% endif %}
-
-<div class="panel">
-    <h2>Your account</h2>
-    <p style="color:var(--muted); font-size:13px; margin:0 0 16px;">
-        Logged in as <strong>{{ session.username }}</strong>. Leaving removes your login entirely —
-        you'd need someone with access to add you back.
-    </p>
-    <form method="POST" action="{{ url_for('leave_access') }}" style="margin:0;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" onclick="return confirm('Leave this app? Your own access will be removed immediately.')">
-            Leave access
-        </button>
-    </form>
 </div>
 
 </body>
