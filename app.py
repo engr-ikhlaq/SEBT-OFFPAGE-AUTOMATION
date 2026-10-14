@@ -285,6 +285,7 @@ def _google_account_context() -> dict:
         "manual_gmail_form": ManualGmailForm(),
         "data_backend_name": backend.name,
         "scraped_leads": scraped_leads,
+        "sheet_url": _connected_sheet_url(username, require_owner()),
         "user_sheet": db.get_user_sheet(username),
         "service_account_sheets_configured": data_source.service_account_sheets_configured(),
         "service_account_email": sheets_source.service_account_email(),
@@ -296,6 +297,28 @@ def _google_account_context() -> dict:
         "country_labels": COUNTRIES,
         "language_labels": LANGUAGES,
     }
+
+
+def _connected_sheet_url(username: str, is_owner: bool) -> str | None:
+    """The actual Google Sheet URL this user's leads are written to, for
+    the dashboard's "Open Sheet" button - None if they're on the local-file
+    backend (nothing to open in Sheets). Mirrors data_source.for_user()'s
+    same priority order (own OAuth Sheet > own manually-connected Sheet >
+    the owner's shared Sheet), without needing to actually open a Sheets
+    API connection just to find out the ID - these are already on hand
+    from the same lookups for_user() itself would make."""
+    account = db.get_google_account(username)
+    if account and account.get("sheet_id"):
+        sheet_id = account["sheet_id"]
+    else:
+        user_sheet = db.get_user_sheet(username)
+        if user_sheet:
+            sheet_id = user_sheet["sheet_id"]
+        elif is_owner and data_source.admin_sheet_configured():
+            sheet_id = os.environ.get("GOOGLE_SHEET_ID")
+        else:
+            return None
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit" if sheet_id else None
 
 
 def _any_imap_configured() -> bool:
@@ -1056,6 +1079,7 @@ def dashboard():
         lead_counts=lead_counts,
         data_backend_name=backend.name,
         is_owner=require_owner(),
+        sheet_url=_connected_sheet_url(username, require_owner()),
     )
 
 

@@ -8,7 +8,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body class="dashboard-bg">
-{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_eye, icon_message, icon_alert, icon_trash, icon_check, icon_x, icon_bell, icon_stop %}
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_eye, icon_message, icon_alert, icon_trash, icon_check, icon_x, icon_bell, icon_stop, icon_link %}
 <div class="shell">
 
     <div class="sidebar">
@@ -64,6 +64,9 @@
         <!-- action toolbar: just the pills, floating directly on the page
              background (no card wrapper) -->
         <div class="hero-pills">
+            {% if sheet_url %}
+            <a href="{{ sheet_url }}" target="_blank" rel="noopener" class="hero-pill" style="text-decoration:none;">{{ icon_link(14) }} Open Sheet</a>
+            {% endif %}
             <form method="POST" action="{{ url_for('check_replies') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="hero-pill" style="border:none; cursor:pointer;">{{ icon_search(14) }} Check replies</button>

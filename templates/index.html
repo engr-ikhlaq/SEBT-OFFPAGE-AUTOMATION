@@ -228,13 +228,18 @@
         <div class="panel">
             <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
                 <h2>Scraped leads <span class="hint" style="font-weight:400;">(<span id="leads-count">{{ scraped_leads|length }}</span> in {{ data_backend_name }})</span></h2>
-                {% if scraped_leads %}
-                <form method="POST" action="{{ url_for('clear_leads') }}"
-                      onsubmit="return confirm('Clear these leads from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn-subtle btn-sm" title="Clear from this view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:5px; color:var(--accent-2);">{{ icon_trash(13) }} Clear leads</button>
-                </form>
-                {% endif %}
+                <div style="display:flex; gap:8px;">
+                    {% if sheet_url %}
+                    <a href="{{ sheet_url }}" target="_blank" rel="noopener" class="btn-outline btn-sm" style="display:flex; align-items:center; gap:5px; text-decoration:none;">{{ icon_link(13) }} Open Sheet</a>
+                    {% endif %}
+                    {% if scraped_leads %}
+                    <form method="POST" action="{{ url_for('clear_leads') }}"
+                          onsubmit="return confirm('Clear these leads from your dashboard view? {{ data_backend_name }} itself will NOT be touched — new leads scraped from here on will still show up.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn-subtle btn-sm" title="Clear from this view only — does not delete from {{ data_backend_name }}" style="display:flex; align-items:center; gap:5px; color:var(--accent-2);">{{ icon_trash(13) }} Clear leads</button>
+                    </form>
+                    {% endif %}
+                </div>
             </div>
             <table id="leads-table">
                 <thead>
