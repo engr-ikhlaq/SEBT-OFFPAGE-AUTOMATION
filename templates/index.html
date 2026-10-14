@@ -243,7 +243,7 @@
             </div>
             <table id="leads-table">
                 <thead>
-                <tr><th>Domain</th><th>Email</th><th>Keyword</th><th>Status</th></tr>
+                <tr><th>Domain</th><th>Email</th><th>Keyword</th><th title="Open PageRank authority score, 0-10">DA</th><th title="Tranco global traffic rank — lower is more traffic">Traffic Rank</th><th>Status</th></tr>
                 </thead>
                 <tbody id="leads-tbody">
                     {% for lead in scraped_leads %}
@@ -251,10 +251,12 @@
                         <td>{{ lead.Domain or '—' }}</td>
                         <td>{{ lead.Email }}</td>
                         <td>{{ lead.Keyword or '—' }}</td>
+                        <td>{{ lead.DA or '—' }}</td>
+                        <td>{{ '#{:,}'.format(lead['Traffic Rank']|int) if lead['Traffic Rank'] else '—' }}</td>
                         <td>{{ lead.Status or 'pending' }}</td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4" class="empty">No leads scraped yet — start a scrape above and they'll show up here as they're found.</td></tr>
+                    <tr><td colspan="6" class="empty">No leads scraped yet — start a scrape above and they'll show up here as they're found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -369,13 +371,15 @@
       if (!data.leads) return;
       leadsCountEl.textContent = data.leads.length;
       if (!data.leads.length) {
-        leadsTbody.innerHTML = '<tr><td colspan="4" class="empty">No leads scraped yet — start a scrape above and they\'ll show up here as they\'re found.</td></tr>';
+        leadsTbody.innerHTML = '<tr><td colspan="6" class="empty">No leads scraped yet — start a scrape above and they\'ll show up here as they\'re found.</td></tr>';
         return;
       }
       leadsTbody.innerHTML = data.leads.map(lead => `<tr>
           <td>${escapeHtml(lead.Domain) || '—'}</td>
           <td>${escapeHtml(lead.Email)}</td>
           <td>${escapeHtml(lead.Keyword) || '—'}</td>
+          <td>${escapeHtml(lead.DA) || '—'}</td>
+          <td>${lead['Traffic Rank'] ? '#' + Number(lead['Traffic Rank']).toLocaleString() : '—'}</td>
           <td>${escapeHtml(lead.Status) || 'pending'}</td>
         </tr>`).join('');
     }).catch(() => {});

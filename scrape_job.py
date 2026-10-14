@@ -38,6 +38,7 @@ import requests
 from selenium.common.exceptions import InvalidSessionIdException
 
 import data_source
+from offpage.authority import AuthorityChecker
 from offpage.browser import BrowserSession, GoogleSearch, PageReader
 from offpage.config import Settings
 from offpage.crawler import SiteCrawler
@@ -205,6 +206,26 @@ def _settings_for_keyword(keyword: str) -> Settings:
     )
 
 
+def _authority_checker() -> AuthorityChecker:
+    """A fresh checker per scrape run (its in-process cache doesn't need
+    to outlive one run - the next run re-checking a domain isn't a real
+    cost). OPEN_PAGERANK_API_KEY unset just means every lead's DA column
+    stays blank; Tranco traffic rank needs no key at all."""
+    return AuthorityChecker(open_pagerank_key=os.environ.get("OPEN_PAGERANK_API_KEY"))
+
+
+def _authority_thresholds() -> tuple[float, int | None]:
+    """(min_da, max_traffic_rank) from .env - both unset (0, None) means
+    no filtering at all, the same as before this feature existed: every
+    lead that passes relevance/email still gets through, just now with
+    DA/traffic shown alongside it. Set these once you've seen what real
+    numbers look like for your niche and know what "too low" means for it."""
+    min_da = float(os.environ.get("MIN_DA_SCORE", "0") or "0")
+    raw_rank = os.environ.get("MAX_TRAFFIC_RANK", "").strip()
+    max_traffic_rank = int(raw_rank) if raw_rank else None
+    return min_da, max_traffic_rank
+
+
 def _on_lead(count: int, lead) -> None:
     with _lock:
         _status.queued_this_batch = count
@@ -247,6 +268,7 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
             # and the scrape progress stay in step without the write
             # latency adding to how long the scrape itself takes.
             writer = LeadWriter(sink, store, settings.batch_size, async_writes=True)
+            min_da, max_traffic_rank = _authority_thresholds()
 
             pipeline = LeadPipeline(
                 settings=settings,
@@ -260,6 +282,9 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
                 url_filter=UrlFilter(settings.allowed_suffixes),
                 store=store,
                 writer=writer,
+                authority_checker=_authority_checker(),
+                min_da=min_da,
+                max_traffic_rank=max_traffic_rank,
             )
             try:
                 pipeline.run(max_leads=LEADS_PER_BATCH, on_lead=_on_lead, should_stop=_should_stop)

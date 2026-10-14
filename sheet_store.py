@@ -35,10 +35,22 @@ class SheetStore:
     # --- RowSink protocol (offpage.writer.LeadWriter writes through this) ---
 
     def ensure_headers(self) -> None:
+        """Write the header row if the sheet is empty. If it already has
+        headers (a Sheet connected before "DA"/"Traffic Rank" existed,
+        say), extend them with whatever trailing columns are missing -
+        never reorders or touches existing columns/data."""
         current = [cell.strip() for cell in self._ws.row_values(1)]
         if not any(current):
             last_cell = gspread.utils.rowcol_to_a1(1, len(HEADERS))
             self._ws.update(range_name=f"A1:{last_cell}", values=[list(HEADERS)])
+            return
+        if current == list(HEADERS):
+            return
+        if len(current) < len(HEADERS) and list(HEADERS[: len(current)]) == current:
+            missing = HEADERS[len(current):]
+            first_cell = gspread.utils.rowcol_to_a1(1, len(current) + 1)
+            last_cell = gspread.utils.rowcol_to_a1(1, len(HEADERS))
+            self._ws.update(range_name=f"{first_cell}:{last_cell}", values=[list(missing)])
 
     def append_rows(self, rows: list[list]) -> None:
         self._ws.append_rows(rows, value_input_option="RAW")

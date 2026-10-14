@@ -28,11 +28,9 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-HEADERS = (
-    "Date", "Keyword", "Query", "Domain", "URL",
-    "Email", "Contact Page", "Snippet", "Score",
-    "Status", "Sent Time", "Error",
-)
+from offpage.models import LEAD_HEADERS
+
+HEADERS = LEAD_HEADERS  # single source of truth - see offpage/models.py's docstring
 SHEET_NAME = "Leads"
 
 # openpyxl has no concurrent-writer story of its own (it's a file format
@@ -81,8 +79,21 @@ class ExcelSink:
         self._path = path or default_path()
 
     def ensure_headers(self) -> None:
+        """Creates the file with the current HEADERS if it's new. For an
+        existing file, extends its header row with any trailing columns
+        it's missing (e.g. a file written before "DA"/"Traffic Rank"
+        existed) rather than leaving it stuck on the old layout -
+        existing columns and all existing data rows are left untouched."""
         with _lock:
-            _open_or_create(self._path)  # creates the file with headers if missing; otherwise a no-op
+            wb = _open_or_create(self._path)
+            ws = _worksheet(wb)
+            current = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
+            if list(HEADERS) == current:
+                return
+            if list(HEADERS[: len(current)]) == current:
+                for i, name in enumerate(HEADERS[len(current):]):
+                    ws.cell(row=1, column=len(current) + 1 + i, value=name)
+                wb.save(self._path)
 
     def append_rows(self, rows: list[list]) -> None:
         with _lock:

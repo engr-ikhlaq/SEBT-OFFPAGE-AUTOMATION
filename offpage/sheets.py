@@ -44,11 +44,24 @@ class SheetSink:
         self._base_delay = base_delay
 
     def ensure_headers(self) -> None:
-        """Write the header row if the sheet is empty. Refuse to write into a sheet with other headers."""
+        """Write the header row if the sheet is empty. If it already has
+        headers, extend them with whatever trailing columns are missing
+        (e.g. a sheet written before "DA"/"Traffic Rank" existed) - never
+        reorders or removes anything already there, so existing data in
+        existing columns is never at risk. Only refuses when the existing
+        headers actually conflict (not just shorter)."""
         current = [cell.strip() for cell in self._ws.row_values(1)]
         if not any(current):
             last_cell = gspread.utils.rowcol_to_a1(1, len(self._headers))
             self._ws.update(range_name=f"A1:{last_cell}", values=[self._headers])
+            return
+        if current == self._headers:
+            return
+        if len(current) < len(self._headers) and self._headers[: len(current)] == current:
+            missing = self._headers[len(current):]
+            first_cell = gspread.utils.rowcol_to_a1(1, len(current) + 1)
+            last_cell = gspread.utils.rowcol_to_a1(1, len(self._headers))
+            self._ws.update(range_name=f"{first_cell}:{last_cell}", values=[list(missing)])
             return
         if current[: len(self._headers)] != self._headers:
             raise SinkError(

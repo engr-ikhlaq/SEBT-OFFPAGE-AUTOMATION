@@ -8,6 +8,7 @@ from typing import Protocol
 
 from selenium.common.exceptions import InvalidSessionIdException, WebDriverException
 
+from .authority import AuthorityChecker
 from .config import Settings
 from .filters import SEARCH_EXCLUDED_HOSTS, UrlFilter
 from .models import ContactInfo, Lead, PageData, SearchResult
@@ -63,6 +64,9 @@ class LeadPipeline:
         url_filter: UrlFilter,
         store: SeenStore,
         writer: LeadWriter,
+        authority_checker: AuthorityChecker | None = None,
+        min_da: float = 0,
+        max_traffic_rank: int | None = None,
     ) -> None:
         self._settings = settings
         self._search = search
@@ -74,6 +78,15 @@ class LeadPipeline:
         self._filter = url_filter
         self._store = store
         self._writer = writer
+        # None (the default) means no authority/traffic lookup at all -
+        # every lead still gets through exactly as before. min_da/
+        # max_traffic_rank only reject a lead when a signal was actually
+        # found and falls short (see AuthoritySignals.meets) - a site
+        # Open PageRank/Tranco has no data for is never rejected just for
+        # being unmeasured.
+        self._authority = authority_checker
+        self._min_da = min_da
+        self._max_traffic_rank = max_traffic_rank
 
     def run(
         self,
@@ -187,8 +200,28 @@ class LeadPipeline:
             self._skip(result.domain, "no verified email")
             return None
 
+        # Authority/traffic looked up last, only for a candidate that's
+        # already cleared every other bar - one real HTTP lookup per find,
+        # not per raw search result, keeps this cheap even though Tranco
+        # in particular is rate-limited.
+        da_score = traffic_rank = None
+        if self._authority is not None:
+            signals = self._authority.lookup(result.domain)
+            da_score, traffic_rank = signals.da_score, signals.traffic_rank
+            if not signals.meets(self._min_da, self._max_traffic_rank):
+                self._skip(
+                    result.domain,
+                    f"below the authority/traffic bar (DA={da_score if da_score is not None else '?'}, "
+                    f"traffic rank={traffic_rank if traffic_rank is not None else '?'})",
+                )
+                return None
+
         score = self._scorer.score(keyword, page, result.domain, True, bool(contact_url))
-        log.info("Scored %s: %d (%d verified email(s))", result.domain, score, len(verified))
+        log.info(
+            "Scored %s: %d (%d verified email(s), DA=%s, traffic rank=%s)",
+            result.domain, score, len(verified),
+            da_score if da_score is not None else "?", traffic_rank if traffic_rank is not None else "?",
+        )
 
         return Lead(
             run_date=date.today().strftime(RUN_DATE_FORMAT),
@@ -200,4 +233,6 @@ class LeadPipeline:
             contact_url=contact_url,
             snippet=result.snippet,
             score=score,
+            da_score=da_score,
+            traffic_rank=traffic_rank,
         )
