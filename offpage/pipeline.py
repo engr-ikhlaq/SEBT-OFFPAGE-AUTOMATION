@@ -170,6 +170,28 @@ class LeadPipeline:
         self._store.mark_seen([domain])
 
     def _build_lead(self, keyword: str, query: str, result: SearchResult) -> Lead | None:
+        # Authority/traffic is a domain-level signal - no page load needed
+        # to check it - so when an actual bar is configured (min_da or
+        # max_traffic_rank), it's checked FIRST, before spending a real
+        # Selenium page load (and possibly a contact-page crawl on top of
+        # that) on a domain that was never going to qualify anyway. With
+        # no bar configured, DA/traffic is purely informational, so the
+        # lookup moves to the end instead (see below) to avoid spending a
+        # rate-limited Tranco call on a candidate relevance or email
+        # verification would have rejected regardless.
+        da_score = traffic_rank = None
+        checking_a_real_bar = self._authority is not None and (self._min_da > 0 or self._max_traffic_rank is not None)
+        if checking_a_real_bar:
+            signals = self._authority.lookup(result.domain)
+            da_score, traffic_rank = signals.da_score, signals.traffic_rank
+            if not signals.meets(self._min_da, self._max_traffic_rank):
+                self._skip(
+                    result.domain,
+                    f"below the authority/traffic bar (DA={da_score if da_score is not None else '?'}, "
+                    f"traffic rank={traffic_rank if traffic_rank is not None else '?'})",
+                )
+                return None
+
         try:
             page = self._reader.read(result.url)
         except InvalidSessionIdException:
@@ -194,21 +216,9 @@ class LeadPipeline:
             self._skip(result.domain, "no verified email")
             return None
 
-        # Authority/traffic looked up last, only for a candidate that's
-        # already cleared every other bar - one real HTTP lookup per find,
-        # not per raw search result, keeps this cheap even though Tranco
-        # in particular is rate-limited.
-        da_score = traffic_rank = None
-        if self._authority is not None:
+        if self._authority is not None and not checking_a_real_bar:
             signals = self._authority.lookup(result.domain)
             da_score, traffic_rank = signals.da_score, signals.traffic_rank
-            if not signals.meets(self._min_da, self._max_traffic_rank):
-                self._skip(
-                    result.domain,
-                    f"below the authority/traffic bar (DA={da_score if da_score is not None else '?'}, "
-                    f"traffic rank={traffic_rank if traffic_rank is not None else '?'})",
-                )
-                return None
 
         score = self._scorer.score(keyword, page, result.domain, True, bool(contact_url))
         log.info(

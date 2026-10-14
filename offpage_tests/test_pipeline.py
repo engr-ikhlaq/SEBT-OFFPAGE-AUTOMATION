@@ -5,6 +5,7 @@ import unittest
 
 from selenium.common.exceptions import WebDriverException
 
+from offpage.authority import AuthoritySignals
 from offpage.config import Settings
 from offpage.models import ContactInfo, PageData, SearchResult
 from offpage.pipeline import LeadPipeline, SearchFailuresError
@@ -70,7 +71,7 @@ def _settings(**overrides) -> Settings:
     return Settings(**base)
 
 
-def _pipeline(search, reader, store, writer, settings=None) -> LeadPipeline:
+def _pipeline(search, reader, store, writer, settings=None, **pipeline_kwargs) -> LeadPipeline:
     scorer = Scorer()
     return LeadPipeline(
         settings=settings or _settings(),
@@ -83,6 +84,7 @@ def _pipeline(search, reader, store, writer, settings=None) -> LeadPipeline:
         url_filter=UrlFilter(),
         store=store,
         writer=writer,
+        **pipeline_kwargs,
     )
 
 
@@ -152,6 +154,124 @@ class PipelineEmailRuleTests(unittest.TestCase):
             queued = _pipeline(search, reader, store, writer).run()
         self.assertEqual(queued, 0)
         self.assertEqual(sink.rows, [])
+
+
+class FakeAuthority:
+    """Records every domain it's asked about, in order - lets a test prove
+    whether it was consulted at all, and when, relative to the reader."""
+
+    def __init__(self, signals_by_domain: dict[str, AuthoritySignals]):
+        self._signals = signals_by_domain
+        self.asked_about: list[str] = []
+
+    def lookup(self, domain: str) -> AuthoritySignals:
+        self.asked_about.append(domain)
+        return self._signals.get(domain, AuthoritySignals(da_score=None, traffic_rank=None))
+
+
+class RecordingReader:
+    """Wraps a FakeReader and records which URLs were actually read - so a
+    test can prove a page load was skipped entirely, not just that its
+    result was discarded afterward."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.read_urls: list[str] = []
+
+    def read(self, url):
+        self.read_urls.append(url)
+        return self._inner.read(url)
+
+
+class PipelineAuthorityOrderingTests(unittest.TestCase):
+    """When an actual min_da/max_traffic_rank bar is configured, a low-
+    authority domain should be rejected WITHOUT ever loading its page -
+    see pipeline.py's _build_lead() for why (no point spending a real
+    Selenium page load, and possibly a contact-page crawl on top of that,
+    on a domain that was never going to qualify)."""
+
+    def _candidate(self, domain="site.test"):
+        query = 'pept "write for us"'
+        results = [SearchResult(url=f"https://{domain}", domain=domain, snippet="")]
+        page = PageData(
+            title="Pept write for us", body="We accept guest posts about pept. Write for us.",
+            emails=frozenset({f"a@{domain}"}),
+        )
+        return query, results, page, domain
+
+    def test_a_domain_below_the_bar_is_rejected_without_reading_its_page(self):
+        query, results, page, domain = self._candidate()
+        search = FakeSearch({query: results})
+        reader = RecordingReader(FakeReader({domain: page}))
+        authority = FakeAuthority({domain: AuthoritySignals(da_score=1.0, traffic_rank=None)})
+
+        with SeenStore(":memory:") as store:
+            sink = FakeSink()
+            writer = LeadWriter(sink, store, batch_size=1)
+            pipeline = _pipeline(search, reader, store, writer, authority_checker=authority, min_da=5.0)
+            queued = pipeline.run()
+
+            self.assertEqual(queued, 0)
+            self.assertEqual(reader.read_urls, [])  # never even tried to load the page
+            self.assertEqual(authority.asked_about, [domain])
+            self.assertTrue(store.is_seen(domain))  # still remembered, so it's not re-checked next run
+
+    def test_a_domain_meeting_the_bar_proceeds_normally_with_signals_attached(self):
+        query, results, page, domain = self._candidate()
+        search = FakeSearch({query: results})
+        reader = RecordingReader(FakeReader({domain: page}))
+        authority = FakeAuthority({domain: AuthoritySignals(da_score=7.5, traffic_rank=1000)})
+
+        with SeenStore(":memory:") as store:
+            sink = FakeSink()
+            writer = LeadWriter(sink, store, batch_size=1)
+            pipeline = _pipeline(search, reader, store, writer, authority_checker=authority, min_da=5.0)
+            queued = pipeline.run()
+            writer.flush()
+
+        self.assertEqual(queued, 1)
+        self.assertEqual(reader.read_urls, [f"https://{domain}"])
+        row = sink.rows[0]
+        self.assertEqual(row[-2], 7.5)     # DA column
+        self.assertEqual(row[-1], 1000)    # Traffic Rank column
+
+    def test_with_no_bar_configured_authority_is_only_checked_after_relevance_passes(self):
+        """No min_da/max_traffic_rank set - a domain relevance would
+        reject anyway must never trigger an (rate-limited) authority
+        lookup at all."""
+        query = 'pept "write for us"'
+        results = [SearchResult(url="https://offtopic.test", domain="offtopic.test", snippet="")]
+        page = PageData(title="Travel blog", body="Nothing relevant here.", emails=frozenset({"a@offtopic.test"}))
+        search = FakeSearch({query: results})
+        reader = RecordingReader(FakeReader({"offtopic.test": page}))
+        authority = FakeAuthority({})
+
+        with SeenStore(":memory:") as store:
+            writer = LeadWriter(FakeSink(), store, batch_size=1)
+            pipeline = _pipeline(search, reader, store, writer, authority_checker=authority)
+            queued = pipeline.run()
+
+        self.assertEqual(queued, 0)
+        self.assertEqual(authority.asked_about, [])  # never consulted - relevance rejected it first
+
+    def test_with_no_bar_configured_a_passing_lead_still_gets_signals_attached(self):
+        query, results, page, domain = self._candidate()
+        search = FakeSearch({query: results})
+        reader = RecordingReader(FakeReader({domain: page}))
+        authority = FakeAuthority({domain: AuthoritySignals(da_score=3.2, traffic_rank=50000)})
+
+        with SeenStore(":memory:") as store:
+            sink = FakeSink()
+            writer = LeadWriter(sink, store, batch_size=1)
+            pipeline = _pipeline(search, reader, store, writer, authority_checker=authority)
+            queued = pipeline.run()
+            writer.flush()
+
+        self.assertEqual(queued, 1)
+        self.assertEqual(authority.asked_about, [domain])
+        row = sink.rows[0]
+        self.assertEqual(row[-2], 3.2)
+        self.assertEqual(row[-1], 50000)
 
 
 class PipelineFailureStopTests(unittest.TestCase):

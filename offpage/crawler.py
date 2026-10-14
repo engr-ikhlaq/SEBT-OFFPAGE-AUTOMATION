@@ -39,7 +39,7 @@ class SiteCrawler:
         parser: PageParser,
         timeout: float = 8,
         paths: tuple[str, ...] = CONTACT_PATHS,
-        workers: int = 6,
+        workers: int = 16,
     ) -> None:
         self._http = http
         self._parser = parser
