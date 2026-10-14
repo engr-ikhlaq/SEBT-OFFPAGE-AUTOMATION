@@ -9,7 +9,7 @@ from typing import Protocol
 from selenium.common.exceptions import InvalidSessionIdException, WebDriverException
 
 from .config import Settings
-from .filters import UrlFilter
+from .filters import SEARCH_EXCLUDED_HOSTS, UrlFilter
 from .models import ContactInfo, Lead, PageData, SearchResult
 from .relevance import RelevanceGate
 from .scoring import Scorer
@@ -17,6 +17,12 @@ from .validation import EmailValidator, is_plausible_domain
 from .writer import LeadWriter
 
 log = logging.getLogger(__name__)
+
+# Computed once, not per-query: a handful of Google "-site:" operators
+# that keep known junk (gig-work listings, pinned boards) from eating a
+# result slot that could've been a real candidate - see
+# filters.SEARCH_EXCLUDED_HOSTS for which hosts and why.
+_NEGATIVE_SITE_FILTER = " ".join(f"-site:{host}" for host in SEARCH_EXCLUDED_HOSTS)
 
 RUN_DATE_FORMAT = "%d-%b-%Y"
 MAX_CONSECUTIVE_SEARCH_FAILURES = 5
@@ -98,7 +104,7 @@ class LeadPipeline:
                 if should_stop is not None and should_stop():
                     return queued
 
-                query = template.replace("[KEYWORD]", keyword)
+                query = f"{template.replace('[KEYWORD]', keyword)} {_NEGATIVE_SITE_FILTER}"
                 log.info("Search: %s", query)
                 try:
                     results = self._search.run(query)

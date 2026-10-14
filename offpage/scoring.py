@@ -8,7 +8,9 @@ from .models import PageData
 INTENT_PATTERNS: Mapping[str, tuple[str, ...]] = {
     "guest_post_core": (
         "write for us", "guest post", "guest posting", "guest article",
-        "submit article", "submit post", "submit guest post",
+        "guest blogging", "guest blogger", "accepting guest posts",
+        "accepting guest contributors", "submit article", "submit post",
+        "submit guest post",
     ),
     "contributor": (
         "become a contributor", "contribute to our site",
@@ -25,6 +27,13 @@ INTENT_PATTERNS: Mapping[str, tuple[str, ...]] = {
         "sponsored post", "advertise with us",
         "brand collaboration", "partnership opportunities",
     ),
+    # A published byline, not a submissions page - proof the site has
+    # actually run someone else's content before, not just that it
+    # claims to be open to it.
+    "proven_track_record": (
+        "guest post by", "this is a guest post", "guest author",
+        "guest contributor", "contributed by",
+    ),
 }
 
 INTENT_WEIGHTS: Mapping[str, int] = {
@@ -33,6 +42,7 @@ INTENT_WEIGHTS: Mapping[str, int] = {
     "editorial": 4,
     "pitch": 3,
     "monetization": 2,
+    "proven_track_record": 6,
 }
 
 DOMAIN_POINTS: tuple[tuple[str, int], ...] = (

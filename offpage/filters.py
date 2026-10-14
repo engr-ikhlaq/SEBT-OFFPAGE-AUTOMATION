@@ -18,6 +18,18 @@ BLOCKED_BUILDER_HOSTS = frozenset({
     "blogspot.com", "weebly.com", "shopify.com", "webflow.io",
 })
 
+# Applied as Google "-site:" operators on the search itself (see
+# offpage.pipeline), not just filtered out afterward like the rest of
+# BLOCKED_HOSTS above - these specific ones come up often enough in
+# "write for us"/"guest post" searches (gig listings, pinned boards) to
+# be worth freeing up the result slot for an actual candidate instead,
+# rather than spending a slot on a result UrlFilter was always going to
+# reject anyway. Kept short deliberately - too many -site: operators in
+# one query risks Google dropping some of them.
+SEARCH_EXCLUDED_HOSTS: tuple[str, ...] = (
+    "pinterest.com", "fiverr.com", "upwork.com", "freelancer.com",
+)
+
 BLOCKED_EXTENSIONS = (
     ".pdf", ".doc", ".docx", ".ppt", ".pptx",
     ".xls", ".xlsx", ".zip", ".rar", ".csv",

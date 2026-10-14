@@ -1,13 +1,22 @@
 """LeadPipeline.run()'s max_leads / on_lead / should_stop, used by the web scrape job."""
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
 
 from offpage.models import PageData, SearchResult
+from offpage.pipeline import _NEGATIVE_SITE_FILTER
 from offpage.storage import SeenStore
 from offpage.writer import LeadWriter
 
-from .test_pipeline import FakeReader, FakeSearch, FakeSink, _pipeline, _settings
+# Absolute import, not relative (`from .test_pipeline import ...`) - under
+# `python -m unittest discover`, this file was sometimes imported without
+# offpage_tests package context, so a relative import raised "attempted
+# relative import with no known parent package". Matches every other test
+# module's sys.path.insert + absolute-import convention in this suite.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_pipeline import FakeReader, FakeSearch, FakeSink, _pipeline, _settings
 
 
 def _lead_page(topic: str) -> PageData:
@@ -23,9 +32,9 @@ class MaxLeadsTests(unittest.TestCase):
         queries = ('[KEYWORD] "q1"', '[KEYWORD] "q2"', '[KEYWORD] "q3"')
         settings = _settings(queries=queries)
         by_query = {
-            'pept "q1"': [SearchResult(url="https://a.test", domain="a.test", snippet="")],
-            'pept "q2"': [SearchResult(url="https://b.test", domain="b.test", snippet="")],
-            'pept "q3"': [SearchResult(url="https://c.test", domain="c.test", snippet="")],
+            f'pept "q1" {_NEGATIVE_SITE_FILTER}': [SearchResult(url="https://a.test", domain="a.test", snippet="")],
+            f'pept "q2" {_NEGATIVE_SITE_FILTER}': [SearchResult(url="https://b.test", domain="b.test", snippet="")],
+            f'pept "q3" {_NEGATIVE_SITE_FILTER}': [SearchResult(url="https://c.test", domain="c.test", snippet="")],
         }
         reader = FakeReader({
             "a.test": _lead_page("pept"), "b.test": _lead_page("pept"), "c.test": _lead_page("pept"),
@@ -64,7 +73,7 @@ class MaxLeadsTests(unittest.TestCase):
         # (otherwise clicking Stop on a slow page could feel unresponsive).
         settings = _settings(queries=('[KEYWORD] "q1"',))
         by_query = {
-            'pept "q1"': [
+            f'pept "q1" {_NEGATIVE_SITE_FILTER}': [
                 SearchResult(url="https://a.test", domain="a.test", snippet=""),
                 SearchResult(url="https://b.test", domain="b.test", snippet=""),
                 SearchResult(url="https://c.test", domain="c.test", snippet=""),

@@ -17,12 +17,23 @@ DEFAULT_KEYWORDS: tuple[str, ...] = (
     "ads cloaking snapchat",
 )
 
-# "[KEYWORD]" is replaced with each keyword at run time.
+# "[KEYWORD]" is replaced with each keyword at run time. Geographic
+# targeting is handled separately now (see offpage.regions / the
+# Compose page's "Result region" + "Language" pickers, which set
+# Google's own gl/hl parameters) - these templates used to hardcode
+# " UK" onto a few variants as a crude substitute, which actively fought
+# a non-UK region selection once that existed, so that's gone in favor
+# of a few more query templates in its place.
 DEFAULT_QUERIES: tuple[str, ...] = (
+    # Direct "we take submissions" pages - the core, most reliable signal.
     '[KEYWORD] "write for us"',
     '[KEYWORD] "guest post"',
     '[KEYWORD] "guest posting"',
     '[KEYWORD] "guest article"',
+    '[KEYWORD] "guest blogging"',
+    '[KEYWORD] "guest blogger"',
+    '[KEYWORD] "accepting guest posts"',
+    '[KEYWORD] "accepting guest contributors"',
     '[KEYWORD] "submit article"',
     '[KEYWORD] "submit a guest post"',
     '[KEYWORD] "become a contributor"',
@@ -40,22 +51,33 @@ DEFAULT_QUERIES: tuple[str, ...] = (
     '[KEYWORD] "article submission"',
     '[KEYWORD] "send article idea"',
     '[KEYWORD] "suggest a post"',
+    # Already-published guest content - proof a site actually follows
+    # through, a stronger signal than a submission-guidelines page that
+    # might be stale or unmonitored.
+    '[KEYWORD] "guest post by"',
+    '[KEYWORD] "this is a guest post"',
+    '[KEYWORD] "guest author"',
+    '[KEYWORD] "guest contributor"',
+    '[KEYWORD] "contributed by" blog',
+    # URL/title-targeted - catches submission pages even when the body
+    # wording doesn't happen to match one of the phrases above.
     'inurl:write-for-us [KEYWORD]',
     'inurl:guest-post [KEYWORD]',
+    'inurl:guest-post-guidelines [KEYWORD]',
     'inurl:contribute [KEYWORD]',
     'inurl:submit-article [KEYWORD]',
     'inurl:blog [KEYWORD] "write for us"',
     'intitle:"write for us" [KEYWORD]',
     'intitle:"guest post" [KEYWORD]',
-    '[KEYWORD] "write for us" UK',
-    '[KEYWORD] "guest post" UK',
-    '[KEYWORD] "submit article" UK',
-    '[KEYWORD] "contribute" UK',
+    # Sponsorship/partnership - a different relationship than a straight
+    # guest post, but the same outreach motion and often the same contact.
     '[KEYWORD] "sponsored post"',
     '[KEYWORD] "advertise with us"',
     '[KEYWORD] "partnership opportunities"',
     '[KEYWORD] "collaborate with us"',
     '[KEYWORD] "brand collaboration"',
+    # "blog" appended narrows toward editorial sites specifically, over
+    # e.g. a company's own marketing page that happens to mention the phrase.
     '[KEYWORD] blog "write for us"',
     '[KEYWORD] blog "guest post"',
     '[KEYWORD] blog "contribute"',
