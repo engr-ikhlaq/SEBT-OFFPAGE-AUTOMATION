@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 
 from offpage.models import PageData, SearchResult
-from offpage.pipeline import _NEGATIVE_SITE_FILTER
 from offpage.storage import SeenStore
 from offpage.writer import LeadWriter
 
@@ -32,9 +31,9 @@ class MaxLeadsTests(unittest.TestCase):
         queries = ('[KEYWORD] "q1"', '[KEYWORD] "q2"', '[KEYWORD] "q3"')
         settings = _settings(queries=queries)
         by_query = {
-            f'pept "q1" {_NEGATIVE_SITE_FILTER}': [SearchResult(url="https://a.test", domain="a.test", snippet="")],
-            f'pept "q2" {_NEGATIVE_SITE_FILTER}': [SearchResult(url="https://b.test", domain="b.test", snippet="")],
-            f'pept "q3" {_NEGATIVE_SITE_FILTER}': [SearchResult(url="https://c.test", domain="c.test", snippet="")],
+            'pept "q1"': [SearchResult(url="https://a.test", domain="a.test", snippet="")],
+            'pept "q2"': [SearchResult(url="https://b.test", domain="b.test", snippet="")],
+            'pept "q3"': [SearchResult(url="https://c.test", domain="c.test", snippet="")],
         }
         reader = FakeReader({
             "a.test": _lead_page("pept"), "b.test": _lead_page("pept"), "c.test": _lead_page("pept"),
@@ -73,7 +72,7 @@ class MaxLeadsTests(unittest.TestCase):
         # (otherwise clicking Stop on a slow page could feel unresponsive).
         settings = _settings(queries=('[KEYWORD] "q1"',))
         by_query = {
-            f'pept "q1" {_NEGATIVE_SITE_FILTER}': [
+            'pept "q1"': [
                 SearchResult(url="https://a.test", domain="a.test", snippet=""),
                 SearchResult(url="https://b.test", domain="b.test", snippet=""),
                 SearchResult(url="https://c.test", domain="c.test", snippet=""),

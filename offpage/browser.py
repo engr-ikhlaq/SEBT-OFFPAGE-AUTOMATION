@@ -175,7 +175,22 @@ class GoogleSearch:
         results: list[SearchResult] = []
         for page_number in range(1, self._max_pages + 1):
             _pause(2, 4)
-            results.extend(self._parse_results())
+            page_results = self._parse_results()
+            if not page_results:
+                # Nothing on this page - either the query has genuinely run
+                # out of results before reaching max_pages (common for a
+                # narrow keyword/phrase combination), or Google is quietly
+                # degrading the response because this session has made a
+                # lot of requests in a row (raising max_pages to 5 means up
+                # to 5x the page loads per query that used to happen).
+                # Either way, clicking "next" further burns a request and a
+                # page load for nothing, and paginating deeper into a
+                # played-out query is exactly the pattern that makes a
+                # session look more automated, not less - so this stops
+                # here rather than working through the rest of the budget.
+                log.info("No results on page %d of %d for this query - stopping here", page_number, self._max_pages)
+                break
+            results.extend(page_results)
             if page_number == self._max_pages or not self._go_next():
                 break
         return results

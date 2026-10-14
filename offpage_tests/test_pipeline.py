@@ -8,7 +8,6 @@ from selenium.common.exceptions import WebDriverException
 from offpage.config import Settings
 from offpage.models import ContactInfo, PageData, SearchResult
 from offpage.pipeline import LeadPipeline, SearchFailuresError
-from offpage.pipeline import _NEGATIVE_SITE_FILTER
 from offpage.relevance import RelevanceGate
 from offpage.scoring import Scorer
 from offpage.storage import SeenStore
@@ -89,7 +88,7 @@ def _pipeline(search, reader, store, writer, settings=None) -> LeadPipeline:
 
 class PipelineEmailRuleTests(unittest.TestCase):
     def test_a_relevant_page_without_a_verified_email_is_not_uploaded(self):
-        query = f'pept "write for us" {_NEGATIVE_SITE_FILTER}'
+        query = 'pept "write for us"'
         results = {query: [SearchResult(url="https://goodsite.com", domain="goodsite.com", snippet="")]}
         page = PageData(title="Pept write for us", body="We accept guest posts about pept. Write for us.")
         search, reader = FakeSearch({query: results[query]}), FakeReader({"goodsite.com": page})
@@ -106,7 +105,7 @@ class PipelineEmailRuleTests(unittest.TestCase):
             self.assertTrue(store.is_seen("goodsite.com"))
 
     def test_a_relevant_page_with_a_verified_email_is_uploaded(self):
-        query = f'pept "write for us" {_NEGATIVE_SITE_FILTER}'
+        query = 'pept "write for us"'
         results = [SearchResult(url="https://goodsite.com", domain="goodsite.com", snippet="")]
         page = PageData(
             title="Pept write for us",
@@ -128,7 +127,7 @@ class PipelineEmailRuleTests(unittest.TestCase):
     def test_relevance_is_checked_against_the_keyword_not_the_full_query(self):
         # The query text contains extra words ("write for us") that are not part
         # of the keyword and must not be required on the page.
-        query = f'pept "write for us" {_NEGATIVE_SITE_FILTER}'
+        query = 'pept "write for us"'
         results = [SearchResult(url="https://goodsite.com", domain="goodsite.com", snippet="")]
         page = PageData(
             title="Pept basics",
@@ -143,7 +142,7 @@ class PipelineEmailRuleTests(unittest.TestCase):
 
     def test_off_topic_relevant_only_to_query_words_is_rejected(self):
         # Page matches words from the query ("write for us") but not the keyword itself.
-        query = f'pept "write for us" {_NEGATIVE_SITE_FILTER}'
+        query = 'pept "write for us"'
         results = [SearchResult(url="https://offtopic.com", domain="offtopic.com", snippet="")]
         page = PageData(title="Travel blog", body="Write for us about travel.", emails=frozenset({"a@offtopic.com"}))
         search, reader = FakeSearch({query: results}), FakeReader({"offtopic.com": page})
