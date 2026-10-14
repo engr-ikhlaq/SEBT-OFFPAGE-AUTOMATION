@@ -211,7 +211,7 @@ class LeadPipeline:
             info = self._crawler.crawl(result.url)
             emails, contact_url = set(info.emails), info.contact_url
 
-        verified = self._emails.filter_valid(emails)
+        verified = self._emails.filter_valid(emails, site_domain=result.domain)
         if not verified:
             self._skip(result.domain, "no verified email")
             return None

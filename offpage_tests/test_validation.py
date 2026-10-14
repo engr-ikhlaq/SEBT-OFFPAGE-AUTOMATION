@@ -69,6 +69,32 @@ class EmailValidatorTests(unittest.TestCase):
         validator.filter_valid(["a@blog.com", "b@blog.com"])
         self.assertEqual(resolver.calls, ["blog.com"])
 
+    def test_an_on_site_address_is_preferred_over_an_unrelated_one(self):
+        validator = EmailValidator(resolver=FakeResolver(mx={"blog.com", "disqus.com"}))
+        verified = validator.filter_valid(
+            ["editor@blog.com", "notify@disqus.com"], site_domain="blog.com"
+        )
+        self.assertEqual(verified, ["editor@blog.com"])
+
+    def test_a_subdomain_address_still_counts_as_on_site(self):
+        validator = EmailValidator(resolver=FakeResolver(mx={"mail.blog.com", "disqus.com"}))
+        verified = validator.filter_valid(
+            ["editor@mail.blog.com", "notify@disqus.com"], site_domain="blog.com"
+        )
+        self.assertEqual(verified, ["editor@mail.blog.com"])
+
+    def test_an_off_site_address_is_kept_when_nothing_on_site_was_found(self):
+        # Some real "write for us" pages only list a personal Gmail/Outlook
+        # contact - that's still the right address to use, not nothing.
+        validator = EmailValidator(resolver=FakeResolver(mx={"gmail.com"}))
+        verified = validator.filter_valid(["editor@gmail.com"], site_domain="blog.com")
+        self.assertEqual(verified, ["editor@gmail.com"])
+
+    def test_with_no_site_domain_given_behaves_as_before(self):
+        validator = EmailValidator(resolver=FakeResolver(mx={"blog.com", "disqus.com"}))
+        verified = validator.filter_valid(["editor@blog.com", "notify@disqus.com"])
+        self.assertEqual(verified, ["editor@blog.com", "notify@disqus.com"])
+
 
 class RelevanceGateTests(unittest.TestCase):
     def setUp(self):

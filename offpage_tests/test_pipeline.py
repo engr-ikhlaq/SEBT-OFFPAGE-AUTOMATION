@@ -142,6 +142,25 @@ class PipelineEmailRuleTests(unittest.TestCase):
             queued = _pipeline(search, reader, store, writer).run()
         self.assertEqual(queued, 1)
 
+    def test_an_on_site_email_is_chosen_over_an_unrelated_one_found_on_the_same_page(self):
+        query = 'pept "write for us"'
+        results = [SearchResult(url="https://goodsite.com", domain="goodsite.com", snippet="")]
+        page = PageData(
+            title="Pept write for us",
+            body="We accept guest posts about pept. Write for us.",
+            emails=frozenset({"editor@goodsite.com", "notify@disqus.com"}),
+        )
+        search, reader = FakeSearch({query: results}), FakeReader({"goodsite.com": page})
+
+        with SeenStore(":memory:") as store:
+            sink = FakeSink()
+            writer = LeadWriter(sink, store, batch_size=1)
+            queued = _pipeline(search, reader, store, writer).run()
+            writer.flush()
+
+            self.assertEqual(queued, 1)
+            self.assertEqual(sink.rows[0][5], "editor@goodsite.com")
+
     def test_off_topic_relevant_only_to_query_words_is_rejected(self):
         # Page matches words from the query ("write for us") but not the keyword itself.
         query = 'pept "write for us"'

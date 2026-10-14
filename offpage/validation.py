@@ -77,8 +77,15 @@ class EmailValidator:
             # NXDOMAIN, no MX record, or a timeout: not verifiable, so reject.
             return False
 
-    def filter_valid(self, emails: Iterable[str]) -> list[str]:
-        """Return the unique valid addresses, lower-cased and sorted."""
+    def filter_valid(self, emails: Iterable[str], site_domain: str | None = None) -> list[str]:
+        """Return the unique valid addresses, lower-cased and sorted.
+
+        site_domain: a page can list several unrelated addresses (a
+        comments widget, an ad network, an author's personal inbox). When
+        given, prefer addresses on the site's own domain (e.g.
+        editor@site.com for site.com) over those, and only fall back to
+        an off-domain address when nothing on-domain was found.
+        """
         valid: set[str] = set()
         for email in emails:
             if not is_valid_email_syntax(email):
@@ -86,4 +93,15 @@ class EmailValidator:
             address = email.strip().lower()
             if self.domain_accepts_mail(address.rsplit("@", 1)[1]):
                 valid.add(address)
+
+        if site_domain:
+            site_domain = strip_www(site_domain.lower())
+            on_site = {e for e in valid if _email_domain_matches(e, site_domain)}
+            if on_site:
+                return sorted(on_site)
         return sorted(valid)
+
+
+def _email_domain_matches(email: str, site_domain: str) -> bool:
+    domain = email.rsplit("@", 1)[1]
+    return domain == site_domain or domain.endswith("." + site_domain)
