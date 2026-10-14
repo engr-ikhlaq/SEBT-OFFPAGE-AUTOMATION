@@ -444,6 +444,17 @@
       setView('idle');
       if (s.state === 'finished' && !modalShownForBatch) {
         modalShownForBatch = true;
+        if (!terminalMessageShown) {
+          terminalMessageShown = true;
+          alert(
+            `Finished searching for "${s.keyword}" — no guest-posting opportunities matched closely ` +
+            `enough to pass the relevance and email checks this run.\n\nThis usually means the keyword ` +
+            `is narrow or unusual (few sites are both genuinely about it and open to outside contributors), ` +
+            `not that anything is broken. Try a broader or related keyword, or check ${s.backend_name || 'your leads store'} ` +
+            `for anything already found in earlier runs.`
+          );
+          refreshLeadsTable();
+        }
       }
       stopPolling();
     }
