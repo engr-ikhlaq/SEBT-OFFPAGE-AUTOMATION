@@ -603,11 +603,20 @@ def onboarding():
 
     form = ManualGmailForm()
     if form.validate_on_submit():
+        email = form.email.data.strip()
+        try:
+            _verify_gmail_app_password(email, form.app_password.data)
+        except Exception as e:
+            flash(f"Could not verify that Gmail address and App Password: {e}")
+            return render_template(
+                "onboarding.html", form=form,
+                google_oauth_configured=google_oauth.is_configured(), is_owner=require_owner(),
+            )
         db.save_manual_email_account(
-            session["username"], form.email.data.strip(), form.app_password.data,
+            session["username"], email, form.app_password.data,
             sender_name=form.sender_name.data.strip(),
         )
-        flash(f"Connected {form.email.data.strip()}.")
+        flash(f"Connected {email}.")
         return redirect(url_for("index"))
 
     return render_template(
@@ -886,13 +895,23 @@ def connect_gmail_manual():
         return redirect(url_for("login"))
     form = ManualGmailForm()
     if form.validate_on_submit():
+        email = form.email.data.strip()
+        try:
+            _verify_gmail_app_password(email, form.app_password.data)
+        except Exception as e:
+            flash(
+                f"Could not verify that Gmail address and App Password: {e} "
+                "Make sure you're using a real 16-character App Password from "
+                "myaccount.google.com/apppasswords, not your normal Gmail password."
+            )
+            return redirect(url_for("index"))
         db.save_manual_email_account(
-            session["username"], form.email.data.strip(), form.app_password.data,
+            session["username"], email, form.app_password.data,
             sender_name=form.sender_name.data.strip(),
         )
-        flash(f"Connected {form.email.data.strip()}.")
+        flash(f"Connected {email}.")
     else:
-        flash("Enter both your Gmail address and an App Password.")
+        flash("Enter your Gmail address, App Password, and the name to sign emails as.")
     return redirect(url_for("index"))
 
 
