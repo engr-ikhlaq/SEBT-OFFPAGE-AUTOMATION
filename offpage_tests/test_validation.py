@@ -7,7 +7,7 @@ import dns.exception
 
 from offpage.models import PageData
 from offpage.parsing import extract_emails
-from offpage.relevance import RelevanceGate, keyword_terms
+from offpage.relevance import RelevanceGate
 from offpage.scoring import Scorer
 from offpage.validation import EmailValidator, is_plausible_domain, is_valid_email_syntax
 
@@ -97,48 +97,34 @@ class EmailValidatorTests(unittest.TestCase):
 
 
 class RelevanceGateTests(unittest.TestCase):
+    """Topic match is no longer a hard gate (see offpage/relevance.py's
+    docstring) - an off-topic page with genuine guest-post wording is a
+    real lead, just a weaker one, ranked lower by Scorer.score() instead
+    of being thrown away. Only two things still reject a page outright:
+    no guest-post wording at all, or it reads like a paid link-building
+    service/portfolio rather than a real publication."""
+
     def setUp(self):
         self.gate = RelevanceGate(Scorer())
-
-    def test_keyword_terms_drop_short_and_stop_words(self):
-        self.assertEqual(keyword_terms("snapchat cloaking agency"), ("snapchat", "cloaking", "agency"))
-        self.assertEqual(keyword_terms("pept"), ("pept",))
 
     def test_relevant_guest_post_page_passes(self):
         page = PageData(
             title="Peptide research guest posts",
             body="We welcome guest posts about peptide research. Write for us.",
         )
-        self.assertIsNone(self.gate.rejection_reason("pept", page))
+        self.assertIsNone(self.gate.rejection_reason(page))
 
-    def test_off_topic_page_is_rejected(self):
+    def test_an_off_topic_page_with_genuine_guest_post_wording_is_still_captured(self):
+        # A travel blog has nothing to do with "pept", but it's still a
+        # real guest-posting opportunity - captured now, just scored lower.
         page = PageData(title="Cheap flights", body="Write for us if you love travel guest posts.")
-        self.assertIn("topic not clear", self.gate.rejection_reason("pept", page))
+        self.assertIsNone(self.gate.rejection_reason(page))
 
-    def test_scattered_generic_words_do_not_pass_as_topic(self):
-        # An SEO-tool page that mentions ads, pinterest and cloaking separately.
-        page = PageData(
-            title="Ad analytics platform",
-            body="Track ads across channels. Pinterest and cloaking detection. Write for us guest post.",
-        )
-        self.assertIn("topic not clear", self.gate.rejection_reason("ads cloaking pinterest", page))
-
-    def test_exact_phrase_in_body_counts_as_topic(self):
-        page = PageData(
-            title="Industry news",
-            body="Our blog covers ads cloaking pinterest policy. Write for us: guest post.",
-        )
-        self.assertIsNone(self.gate.rejection_reason("ads cloaking pinterest", page))
-
-    def test_on_topic_page_without_guest_post_wording_is_rejected(self):
+    def test_a_page_without_guest_post_wording_is_rejected(self):
         page = PageData(title="Peptide products", body="Buy peptide supplements today.")
-        self.assertIn("guest-post", self.gate.rejection_reason("pept", page))
+        self.assertIn("guest-post", self.gate.rejection_reason(page))
 
-    def test_every_term_must_appear(self):
-        page = PageData(title="Snapchat tips", body="Write for us: guest post about snapchat.")
-        self.assertIn("topic not clear", self.gate.rejection_reason("snapchat cloaking agency", page))
-
-    def test_a_guest_posting_service_portfolio_is_rejected_despite_a_stray_keyword_mention(self):
+    def test_a_guest_posting_service_portfolio_is_rejected_despite_guest_post_wording(self):
         # Modeled on a real false positive: a "guest posting expert" portfolio
         # site, unrelated to peptides, that happened to have ONE client
         # testimonial mentioning "peptide" among many for other industries.
@@ -152,7 +138,7 @@ class RelevanceGateTests(unittest.TestCase):
                 "Association Awards for best overall peptide."
             ),
         )
-        reason = self.gate.rejection_reason("pept", page)
+        reason = self.gate.rejection_reason(page)
         self.assertIsNotNone(reason)
         self.assertIn("guest-posting/link-building service", reason)
 
@@ -163,7 +149,7 @@ class RelevanceGateTests(unittest.TestCase):
             title="Peptide Research Blog",
             body="We cover peptide research and welcome guest posts. Write for us or submit a guest post.",
         )
-        self.assertIsNone(self.gate.rejection_reason("pept", page))
+        self.assertIsNone(self.gate.rejection_reason(page))
 
 
 if __name__ == "__main__":

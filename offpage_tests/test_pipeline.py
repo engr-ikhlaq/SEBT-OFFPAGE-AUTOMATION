@@ -161,8 +161,11 @@ class PipelineEmailRuleTests(unittest.TestCase):
             self.assertEqual(queued, 1)
             self.assertEqual(sink.rows[0][5], "editor@goodsite.com")
 
-    def test_off_topic_relevant_only_to_query_words_is_rejected(self):
-        # Page matches words from the query ("write for us") but not the keyword itself.
+    def test_an_off_topic_page_with_genuine_guest_post_wording_is_still_captured(self):
+        # A travel blog is unrelated to "pept", but it's still a real
+        # guest-posting opportunity - topic match is no longer a hard
+        # gate (see offpage/relevance.py), so this is captured as a
+        # lead, just with a lower score than an on-topic match would get.
         query = 'pept "write for us"'
         results = [SearchResult(url="https://offtopic.com", domain="offtopic.com", snippet="")]
         page = PageData(title="Travel blog", body="Write for us about travel.", emails=frozenset({"a@offtopic.com"}))
@@ -171,8 +174,9 @@ class PipelineEmailRuleTests(unittest.TestCase):
             sink = FakeSink()
             writer = LeadWriter(sink, store, batch_size=1)
             queued = _pipeline(search, reader, store, writer).run()
-        self.assertEqual(queued, 0)
-        self.assertEqual(sink.rows, [])
+            writer.flush()
+        self.assertEqual(queued, 1)
+        self.assertEqual(sink.rows[0][3], "offtopic.com")
 
 
 class FakeAuthority:

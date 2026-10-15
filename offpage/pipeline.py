@@ -200,7 +200,7 @@ class LeadPipeline:
             self._skip(result.domain, "could not render the page", level=logging.WARNING)
             return None
 
-        reason = self._gate.rejection_reason(keyword, page)
+        reason = self._gate.rejection_reason(page)
         if reason:
             self._skip(result.domain, f"not relevant ({reason})")
             return None
