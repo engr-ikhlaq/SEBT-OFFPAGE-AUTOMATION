@@ -13,3 +13,10 @@ beautifulsoup4
 selenium
 dnspython
 openpyxl
+
+# Local word-vector model for RelevanceGate's same-subject check (see
+# offpage/semantics.py) - runs fully offline once installed, no API key
+# or ongoing cost. The model line is a direct wheel URL, not a normal
+# PyPI release, which is how spaCy itself distributes its models.
+spacy
+en_core_web_md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl

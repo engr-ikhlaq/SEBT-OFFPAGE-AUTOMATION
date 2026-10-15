@@ -161,11 +161,32 @@ class PipelineEmailRuleTests(unittest.TestCase):
             self.assertEqual(queued, 1)
             self.assertEqual(sink.rows[0][5], "editor@goodsite.com")
 
+    def test_a_different_category_page_is_rejected_even_with_guest_post_wording(self):
+        # "phone" is a category the taxonomy recognizes (technology) - a
+        # food blog that takes guest posts is a confidently different
+        # category, so unlike "pept" above, this one IS rejected.
+        query = 'phone "write for us"'
+        results = [SearchResult(url="https://foodblog.com", domain="foodblog.com", snippet="")]
+        page = PageData(
+            title="Easy Dinner Recipes",
+            body="Our food blog shares cooking recipes and kitchen tips. Write for us guest post.",
+            emails=frozenset({"a@foodblog.com"}),
+        )
+        search, reader = FakeSearch({query: results}), FakeReader({"foodblog.com": page})
+        settings = _settings(keywords=("phone",), queries=('[KEYWORD] "write for us"',))
+        with SeenStore(":memory:") as store:
+            sink = FakeSink()
+            writer = LeadWriter(sink, store, batch_size=1)
+            queued = _pipeline(search, reader, store, writer, settings).run()
+        self.assertEqual(queued, 0)
+        self.assertEqual(sink.rows, [])
+
     def test_an_off_topic_page_with_genuine_guest_post_wording_is_still_captured(self):
-        # A travel blog is unrelated to "pept", but it's still a real
-        # guest-posting opportunity - topic match is no longer a hard
-        # gate (see offpage/relevance.py), so this is captured as a
-        # lead, just with a lower score than an on-topic match would get.
+        # A travel blog doesn't literally mention "pept", but "pept" isn't
+        # a category the taxonomy recognizes either (see
+        # offpage/categories.py) - so there's nothing to confidently
+        # reject it against, and it's captured as a lead, just with a
+        # lower score than an on-topic match would get.
         query = 'pept "write for us"'
         results = [SearchResult(url="https://offtopic.com", domain="offtopic.com", snippet="")]
         page = PageData(title="Travel blog", body="Write for us about travel.", emails=frozenset({"a@offtopic.com"}))
