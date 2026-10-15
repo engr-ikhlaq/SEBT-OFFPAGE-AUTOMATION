@@ -69,18 +69,43 @@ def domain_points(domain: str) -> int:
     return 0
 
 
+# When a suffix's real reply rate is known (see db.get_tld_reply_rates),
+# it's scaled onto this range instead of the static DOMAIN_POINTS guess -
+# set a little above the richest static entry (.edu/.gov = 15) so a
+# suffix that actually gets replies in practice can clearly outrank one
+# that merely LOOKS authoritative but never converts.
+LEARNED_DOMAIN_POINTS_SCALE = 30
+
+
 class Scorer:
-    def __init__(self, intent_patterns: Mapping[str, tuple[str, ...]] = INTENT_PATTERNS) -> None:
+    def __init__(
+        self,
+        intent_patterns: Mapping[str, tuple[str, ...]] = INTENT_PATTERNS,
+        tld_reply_rates: Mapping[str, float] | None = None,
+    ) -> None:
         # Flatten to (phrase, weight) once instead of looking up groups per call.
         self._intent = tuple(
             (phrase, INTENT_WEIGHTS[group])
             for group, phrases in intent_patterns.items()
             for phrase in phrases
         )
+        # Real reply-rate per domain suffix, learned from this tool's own
+        # past outreach history (see db.get_tld_reply_rates) - None/empty
+        # means no real data yet (a fresh install, or too few sends so
+        # far), so domain scoring falls back to the static table below,
+        # exactly as it worked before this existed.
+        self._tld_reply_rates = tld_reply_rates or {}
 
     def intent_points(self, body: str) -> int:
         text = body.lower()
         return min(sum(w for phrase, w in self._intent if phrase in text), INTENT_CAP)
+
+    def _domain_points(self, domain: str) -> int:
+        for suffix, static_points in DOMAIN_POINTS:
+            if domain.endswith(suffix):
+                rate = self._tld_reply_rates.get(suffix)
+                return round(rate * LEARNED_DOMAIN_POINTS_SCALE) if rate is not None else static_points
+        return 0
 
     def score(
         self,
@@ -112,7 +137,7 @@ class Scorer:
         total = min(total + self.intent_points(page.body), TOTAL_AFTER_INTENT_CAP)
 
         # 3. Domain quality.
-        total = min(total + domain_points(domain), TOTAL_AFTER_DOMAIN_CAP)
+        total = min(total + self._domain_points(domain), TOTAL_AFTER_DOMAIN_CAP)
 
         # 4. Contact quality.
         total += 6 if has_email else 0

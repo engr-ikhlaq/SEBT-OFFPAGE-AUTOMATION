@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body class="dashboard-bg">
-{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_clock %}
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_clock, icon_message %}
 <div class="shell">
 
     <div class="sidebar">
@@ -15,6 +15,7 @@
         <a href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
         <a href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
         {% if is_owner %}<a href="{{ url_for('search_history') }}" title="Search history">{{ icon_clock() }}</a>{% endif %}
+        {% if is_owner %}<a href="{{ url_for('relationships') }}" title="Relationships">{{ icon_message() }}</a>{% endif %}
         <a class="active" href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>
         <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
     </div>

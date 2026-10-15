@@ -245,6 +245,19 @@ def _visible_leads(backend, username: str) -> list[dict]:
     return [row for row in rows if row.get("row", 0) > watermark]
 
 
+def _flag_previously_contacted(leads: list[dict]) -> None:
+    """Relationship memory: marks each lead dict in place with whether its
+    domain was already pitched in ANY past campaign (any user), and
+    whether that past contact ever got a reply - so the same editor
+    doesn't get cold-emailed twice just because they turned up again in
+    a new scrape. See db.get_contacted_domains()."""
+    contacted = db.get_contacted_domains()
+    for lead in leads:
+        prior = contacted.get(lead.get("Domain"))
+        lead["PreviouslyContacted"] = bool(prior)
+        lead["PriorReply"] = bool(prior and prior.get("replied_at"))
+
+
 def _lead_counts(rows: list[dict]) -> dict:
     counts = {"total": 0, "sent": 0, "failed": 0, "pending": 0}
     for row in rows:
@@ -275,6 +288,7 @@ def _google_account_context() -> dict:
         scraped_leads = _visible_leads(backend, username)
         scraped_leads.sort(key=lambda lead: lead.get("row", 0), reverse=True)
         scraped_leads = scraped_leads[:50]
+        _flag_previously_contacted(scraped_leads)
     except Exception:
         log.exception("Could not read leads from %s", backend.name)
         scraped_leads = []
@@ -598,7 +612,7 @@ def onboarding():
 # hits (forgot/reset password, unsubscribe, tracking pixels/links).
 _ONBOARDING_EXEMPT_ENDPOINTS = {
     "login", "signup", "logout", "onboarding", "forgot_password", "reset_password",
-    "users", "delete_user", "leave_access", "update_name", "search_history",
+    "users", "delete_user", "leave_access", "update_name", "search_history", "relationships",
     "connect_google", "connect_google_callback", "connect_google_disconnect",
     "connect_gmail_manual", "connect_gmail_manual_disconnect",
     "unsubscribe", "static", None,
@@ -708,6 +722,25 @@ def search_history():
         country_labels=COUNTRIES,
         language_labels=LANGUAGES,
     )
+
+
+@app.route("/admin/relationships")
+def relationships():
+    """Owner-only: every domain ever outreached to (any user, any
+    campaign), most recently contacted first - a real CRM-style
+    relationship history instead of starting from zero on every scrape.
+    See db.get_contacted_domains()."""
+    if not require_login():
+        return redirect(url_for("login"))
+    if not require_owner():
+        flash("Only the owner account can view relationship history.")
+        return redirect(url_for("dashboard"))
+    contacted = sorted(
+        db.get_contacted_domains().values(),
+        key=lambda row: row.get("sent_at") or "",
+        reverse=True,
+    )
+    return render_template("relationships.html", contacted=contacted)
 
 
 # ---------------------------------------------------------------------------
@@ -1140,6 +1173,7 @@ def leads_recent():
         leads = _visible_leads(backend, session["username"])
     except Exception as e:
         return {"error": str(e)}, 500
+    _flag_previously_contacted(leads)
     leads.sort(key=lambda lead: lead.get("row", 0), reverse=True)
     return {"leads": leads[:50], "backend_name": backend.name}
 

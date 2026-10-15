@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Relationships — Guest Posting Automation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="dashboard-bg">
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_clock, icon_message %}
+<div class="shell">
+
+    <div class="sidebar">
+        <div class="logo">M</div>
+        <a href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
+        <a href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
+        <a href="{{ url_for('search_history') }}" title="Search history">{{ icon_clock() }}</a>
+        <a class="active" href="{{ url_for('relationships') }}" title="Relationships">{{ icon_message() }}</a>
+        <a href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>
+        <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
+    </div>
+
+    <div class="main">
+        <div class="topbar">
+            <div>
+                <div class="brand-line"><b>Guest Posting Automation</b> &middot; Admin</div>
+                <h1>Relationships</h1>
+                <div class="sub">Every domain ever contacted, across every campaign — so nobody gets pitched twice</div>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+        {% endif %}
+        {% endwith %}
+
+        <div class="panel">
+            <table>
+                <thead>
+                <tr>
+                    <th>Domain</th>
+                    <th>Contacted by</th>
+                    <th>Email used</th>
+                    <th>Status</th>
+                    <th>Last sent</th>
+                    <th>Replied</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for row in contacted %}
+                <tr>
+                    <td>{{ row.lead_domain }}</td>
+                    <td>{{ row.username }}</td>
+                    <td>{{ row.email }}</td>
+                    <td>{{ row.status }}</td>
+                    <td>{{ row.sent_at[:19].replace('T', ' ') + ' UTC' if row.sent_at else '—' }}</td>
+                    <td>
+                        {% if row.replied_at %}<span class="role-badge">replied</span>{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="empty">Nobody has been contacted yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

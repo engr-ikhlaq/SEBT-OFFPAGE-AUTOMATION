@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body class="dashboard-bg">
-{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_check, icon_trash, icon_link, icon_check_circle, icon_stop, icon_alert %}
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_search, icon_clock, icon_mail, icon_check, icon_trash, icon_link, icon_check_circle, icon_stop, icon_alert, icon_message %}
 <div class="shell">
 
     <div class="sidebar">
@@ -15,6 +15,7 @@
         <a href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
         <a class="active" href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
         {% if is_owner %}<a href="{{ url_for('search_history') }}" title="Search history">{{ icon_clock() }}</a>{% endif %}
+        {% if is_owner %}<a href="{{ url_for('relationships') }}" title="Relationships">{{ icon_message() }}</a>{% endif %}
         {% if is_owner %}<a href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>{% endif %}
         <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
     </div>
@@ -249,7 +250,10 @@
                 <tbody id="leads-tbody">
                     {% for lead in scraped_leads %}
                     <tr>
-                        <td>{{ lead.Domain or '—' }}</td>
+                        <td>{{ lead.Domain or '—' }}
+                            {% if lead.PriorReply %}<span class="role-badge" title="This domain already replied to a past outreach - check before pitching again">replied before</span>
+                            {% elif lead.PreviouslyContacted %}<span class="role-badge" title="This domain was already contacted in a past campaign">already contacted</span>{% endif %}
+                        </td>
                         <td>{{ lead.Email }}</td>
                         <td>{{ lead.Keyword or '—' }}</td>
                         <td>{{ lead.DA or '—' }}</td>
@@ -376,7 +380,10 @@
         return;
       }
       leadsTbody.innerHTML = data.leads.map(lead => `<tr>
-          <td>${escapeHtml(lead.Domain) || '—'}</td>
+          <td>${escapeHtml(lead.Domain) || '—'}
+            ${lead.PriorReply ? '<span class="role-badge" title="This domain already replied to a past outreach - check before pitching again">replied before</span>'
+              : lead.PreviouslyContacted ? '<span class="role-badge" title="This domain was already contacted in a past campaign">already contacted</span>' : ''}
+          </td>
           <td>${escapeHtml(lead.Email)}</td>
           <td>${escapeHtml(lead.Keyword) || '—'}</td>
           <td>${escapeHtml(lead.DA) || '—'}</td>

@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from offpage.scoring import DOMAIN_POINTS
+
 DB_PATH = Path(__file__).parent / "tracking.db"
 
 SCHEMA = """
@@ -549,6 +551,69 @@ def get_search_history(limit: int = 300):
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Relationship memory + self-learning scoring - the two pieces of data this
+# tool already collects (who got pitched, who replied) but never fed back
+# into anything. See app.py's /admin/relationships and scrape_job.py's use
+# of get_tld_reply_rates() when building each scrape's Scorer.
+# ---------------------------------------------------------------------------
+
+def get_contacted_domains() -> dict[str, dict]:
+    """Every domain ever outreached to (any user, any campaign), keyed by
+    domain, with only the MOST RECENT contact per domain - so a brand-new
+    scrape result can be flagged "you already pitched this site on
+    <date>" instead of looking like a fresh, never-contacted lead."""
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT r.lead_domain, r.email, r.status, r.sent_at, r.replied_at, c.username
+            FROM recipients r
+            JOIN campaigns c ON c.id = r.campaign_id
+            WHERE r.kind='outreach' AND r.lead_domain IS NOT NULL AND r.lead_domain != ''
+            ORDER BY r.id DESC
+        """).fetchall()
+    history: dict[str, dict] = {}
+    for r in rows:
+        history.setdefault(r["lead_domain"], dict(r))  # first hit per domain = most recent (id DESC)
+    return history
+
+
+MIN_TLD_SAMPLE = 5  # a suffix needs at least this many real sends before its reply rate is trusted
+
+
+def get_tld_reply_rates(min_sample: int = MIN_TLD_SAMPLE) -> dict[str, float]:
+    """Real reply-rate per domain suffix (.edu, .com, .org, ...), computed
+    from this tool's own actual outreach history - not a guess. A suffix
+    with fewer than `min_sample` sends is left out entirely rather than
+    returning a rate built on noise (2 sends, 1 reply = a meaningless
+    "50%"); Scorer falls back to its static table for anything left out.
+    Suffixes come from offpage.scoring.DOMAIN_POINTS, so a lead is bucketed
+    exactly the same way whether scoring was learned or static."""
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT lead_domain, replied_at IS NOT NULL AS replied
+            FROM recipients
+            WHERE kind='outreach' AND status='sent'
+              AND lead_domain IS NOT NULL AND lead_domain != ''
+        """).fetchall()
+
+    totals: dict[str, int] = {}
+    replied: dict[str, int] = {}
+    for r in rows:
+        domain = r["lead_domain"]
+        suffix = next((s for s, _ in DOMAIN_POINTS if domain.endswith(s)), None)
+        if suffix is None:
+            continue
+        totals[suffix] = totals.get(suffix, 0) + 1
+        if r["replied"]:
+            replied[suffix] = replied.get(suffix, 0) + 1
+
+    return {
+        suffix: replied.get(suffix, 0) / total
+        for suffix, total in totals.items()
+        if total >= min_sample
+    }
 
 
 def get_lead_journeys(username: str | None = None, limit: int = 100):

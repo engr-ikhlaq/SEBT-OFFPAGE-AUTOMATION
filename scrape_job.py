@@ -262,7 +262,11 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
     http = requests.Session()
     http.headers["User-Agent"] = USER_AGENT
     parser = PageParser()
-    scorer = Scorer()
+    # Real reply-rate per domain suffix, learned from this tool's own past
+    # outreach (see db.get_tld_reply_rates) - empty on a fresh install or
+    # with too little history yet, in which case Scorer quietly falls back
+    # to its static table, exactly as it worked before this existed.
+    scorer = Scorer(tld_reply_rates=db.get_tld_reply_rates())
 
     try:
         with SeenStore(settings.seen_db_path) as store, \
