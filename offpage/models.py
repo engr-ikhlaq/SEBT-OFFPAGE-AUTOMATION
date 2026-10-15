@@ -29,6 +29,7 @@ LEAD_HEADERS = (
     "Error",
     "DA",
     "Traffic Rank",
+    "Word Count",
 )
 
 MAX_CELL_CHARS = 500
@@ -73,6 +74,10 @@ class Lead:
     # which is shown as a blank cell rather than a misleading 0.
     da_score: float | None = None
     traffic_rank: int | None = None
+    # The site's own stated word-count ask (e.g. "500-1000 words"), lifted
+    # straight off its page - see offpage.guidelines. Blank when the page
+    # doesn't say; never invented.
+    word_count: str = ""
 
     def to_row(self) -> list[str | int]:
         return [
@@ -90,6 +95,7 @@ class Lead:
             "",  # Error
             self.da_score if self.da_score is not None else "",
             self.traffic_rank if self.traffic_rank is not None else "",
+            self.word_count,
         ]
 
 

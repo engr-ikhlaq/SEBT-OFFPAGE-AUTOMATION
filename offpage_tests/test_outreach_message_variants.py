@@ -46,6 +46,15 @@ class BuildOutreachMessageTests(unittest.TestCase):
         self.assertIn("<p", html)
         self.assertIn("{{sender_name}}", text)
 
+    def test_a_real_word_count_is_woven_into_the_pitch(self):
+        _, lines = auto_outreach._build_outreach_message(word_count="500-1000 words")
+        self.assertTrue(any("500-1000 words" in line for line in lines))
+
+    def test_no_word_count_leaves_no_trace_of_the_line(self):
+        for _ in range(10):
+            _, lines = auto_outreach._build_outreach_message(word_count="")
+            self.assertFalse(any("per submission" in line for line in lines))
+
 
 if __name__ == "__main__":
     unittest.main()

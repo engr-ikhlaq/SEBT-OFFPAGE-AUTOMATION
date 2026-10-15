@@ -102,10 +102,16 @@ _APPRECIATION_VARIANTS = (
 _SIGNOFF_VARIANTS = ("Regards,", "Best,", "Thanks,")
 
 
-def _build_outreach_message() -> tuple[str, tuple[str, ...]]:
+def _build_outreach_message(word_count: str = "") -> tuple[str, tuple[str, ...]]:
     """A fresh (subject, body_lines) combination, picked independently per
     call — so two different leads essentially never get byte-identical
-    content, without changing what the pitch actually says."""
+    content, without changing what the pitch actually says.
+
+    word_count: the site's own stated word-count ask, lifted straight off
+    its page (see offpage.guidelines) - when present, this is woven in as
+    a specific, genuine detail instead of a generic pitch; when blank
+    (most sites don't state one), the line is left out entirely rather
+    than rendering an empty/awkward sentence."""
     greeting, opening = random.choice(_OPENING_VARIANTS)
     lines = (
         greeting,
@@ -116,6 +122,8 @@ def _build_outreach_message() -> tuple[str, tuple[str, ...]]:
         "",
         *_BULLET_LINES,
         "",
+        *((f"I noticed you ask for {word_count} per submission — happy to write to that length.", "")
+          if word_count else ()),
         random.choice(_CLOSER_VARIANTS),
         "",
         random.choice(_APPRECIATION_VARIANTS),
@@ -195,6 +203,7 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, userna
         domain = lead.get("Domain", "").strip()
         url = lead.get("URL", "").strip() or f"https://{domain}"
         keyword = lead.get("Keyword", "").strip() or "this topic"
+        word_count = lead.get("Word Count", "").strip()
         row = lead["row"]
 
         if not email:
@@ -203,7 +212,7 @@ def send_pending_leads(base_url: str, cfg: MailerConfig, sender, backend, userna
                 on_progress(done, len(leads), "", "skipped")
             continue
 
-        subject_template, body_lines = _build_outreach_message()
+        subject_template, body_lines = _build_outreach_message(word_count=word_count)
 
         campaign_id = db.create_campaign(
             subject=personalize(subject_template, {"domain": domain}),

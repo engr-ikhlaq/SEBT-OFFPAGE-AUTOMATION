@@ -11,6 +11,7 @@ from selenium.common.exceptions import InvalidSessionIdException, WebDriverExcep
 from .authority import AuthorityChecker
 from .config import Settings
 from .filters import UrlFilter
+from .guidelines import extract_word_count_requirement
 from .models import ContactInfo, Lead, PageData, SearchResult
 from .relevance import RelevanceGate
 from .scoring import Scorer
@@ -239,4 +240,5 @@ class LeadPipeline:
             score=score,
             da_score=da_score,
             traffic_rank=traffic_rank,
+            word_count=extract_word_count_requirement(page.body) or "",
         )

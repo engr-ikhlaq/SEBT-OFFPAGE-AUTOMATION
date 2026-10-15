@@ -276,8 +276,8 @@ class PipelineAuthorityOrderingTests(unittest.TestCase):
         self.assertEqual(queued, 1)
         self.assertEqual(reader.read_urls, [f"https://{domain}"])
         row = sink.rows[0]
-        self.assertEqual(row[-2], 7.5)     # DA column
-        self.assertEqual(row[-1], 1000)    # Traffic Rank column
+        self.assertEqual(row[-3], 7.5)     # DA column
+        self.assertEqual(row[-2], 1000)    # Traffic Rank column
 
     def test_with_no_bar_configured_authority_is_only_checked_after_relevance_passes(self):
         """No min_da/max_traffic_rank set - a domain relevance would
@@ -314,8 +314,8 @@ class PipelineAuthorityOrderingTests(unittest.TestCase):
         self.assertEqual(queued, 1)
         self.assertEqual(authority.asked_about, [domain])
         row = sink.rows[0]
-        self.assertEqual(row[-2], 3.2)
-        self.assertEqual(row[-1], 50000)
+        self.assertEqual(row[-3], 3.2)
+        self.assertEqual(row[-2], 50000)
 
 
 class PipelineFailureStopTests(unittest.TestCase):
