@@ -63,6 +63,24 @@ class GoogleAccountsDbTests(unittest.TestCase):
         self.assertEqual(db.get_google_account("alice")["google_email"], "alice@gmail.com")
         self.assertEqual(db.get_google_account("bob")["google_email"], "bob@gmail.com")
 
+    def test_sender_name_defaults_to_none_until_set(self):
+        db.save_google_account("alice", "alice@gmail.com", "r1", "a1", "s1")
+        self.assertIsNone(db.get_google_account("alice")["sender_name"])
+
+    def test_a_token_refresh_does_not_wipe_an_existing_sender_name(self):
+        db.save_google_account("alice", "alice@gmail.com", "r1", "a1", "s1", sender_name="Maira")
+        db.save_google_account("alice", "alice@gmail.com", "r1", "a2", "s1")  # no sender_name passed
+        self.assertEqual(db.get_google_account("alice")["sender_name"], "Maira")
+
+    def test_set_sender_name_prefers_an_existing_google_account_over_manual(self):
+        # Matches sender_for_current_user()'s own priority order - Google
+        # OAuth wins when both are connected.
+        db.save_google_account("alice", "alice@gmail.com", "r1", "a1", "s1")
+        db.save_manual_email_account("alice", "alice-work@gmail.com", "pass")
+        db.set_sender_name("alice", "Maira")
+        self.assertEqual(db.get_google_account("alice")["sender_name"], "Maira")
+        self.assertIsNone(db.get_manual_email_account("alice")["sender_name"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -212,7 +212,7 @@ def sender_for_current_user() -> tuple[MailerConfig, object]:
             db.update_google_access_token(username, creds.token)
         cfg = MailerConfig(
             host="", port=0, username=google_account["google_email"], password="",
-            from_name=_display_name_for(username),
+            from_name=google_account.get("sender_name") or _display_name_for(username),
             from_email=google_account["google_email"],
             reply_to=google_account["google_email"],
             send_delay_seconds=os.environ.get("SEND_DELAY_SECONDS", 3),
@@ -225,7 +225,7 @@ def sender_for_current_user() -> tuple[MailerConfig, object]:
         cfg = MailerConfig(
             host="smtp.gmail.com", port=587,
             username=manual_account["email"], password=manual_account["app_password"],
-            from_name=_display_name_for(username),
+            from_name=manual_account.get("sender_name") or _display_name_for(username),
             from_email=manual_account["email"], reply_to=manual_account["email"],
             send_delay_seconds=os.environ.get("SEND_DELAY_SECONDS", 3),
             max_emails_per_run=os.environ.get("MAX_EMAILS_PER_RUN", 150),
@@ -391,6 +391,14 @@ class LoginForm(FlaskForm):
 class ManualGmailForm(FlaskForm):
     email = StringField("Gmail address", validators=[DataRequired()])
     app_password = PasswordField("App Password", validators=[DataRequired()])
+    # Separate from the login account's own name - this mailbox might be a
+    # completely different persona/brand inbox (e.g. mairablogwrites@gmail.com
+    # signing as "Maira", not whoever is logged in). See db.set_sender_name.
+    sender_name = StringField("Name to sign emails as", validators=[DataRequired()])
+
+
+class SenderNameForm(FlaskForm):
+    sender_name = StringField("Name to sign emails as", validators=[DataRequired()])
 
 
 class ConnectSheetForm(FlaskForm):
@@ -511,7 +519,7 @@ def signup():
             email, generate_password_hash(form.password.data),
             role="member", created_by="self-signup", full_name=full_name,
         )
-        db.save_manual_email_account(email, email, app_password)
+        db.save_manual_email_account(email, email, app_password, sender_name=full_name)
         session["user_id"] = user_id
         session["username"] = email
         session["role"] = "member"
@@ -595,7 +603,10 @@ def onboarding():
 
     form = ManualGmailForm()
     if form.validate_on_submit():
-        db.save_manual_email_account(session["username"], form.email.data.strip(), form.app_password.data)
+        db.save_manual_email_account(
+            session["username"], form.email.data.strip(), form.app_password.data,
+            sender_name=form.sender_name.data.strip(),
+        )
         flash(f"Connected {form.email.data.strip()}.")
         return redirect(url_for("index"))
 
@@ -645,6 +656,54 @@ def _require_gmail_connection():
         return {"error": "Connect a Gmail account first."}, 403
     flash("Connect a Gmail account first — it's required before you can scrape or send.")
     return redirect(url_for("onboarding"))
+
+
+@app.before_request
+def _require_sender_name():
+    """A connected mailbox with no sender_name set (every connection made
+    before that column existed, or any future gap) signs outreach emails
+    with the LOGIN account's own name instead of a name that actually
+    fits that mailbox - a brand/persona inbox like
+    mairablogwrites@gmail.com signing off as the admin's own name
+    instead of its own. Caught here the moment it's noticed, rather than
+    only after emails already went out wrong. See db.set_sender_name
+    and /account/sender-name."""
+    if not require_login():
+        return None
+    endpoint = request.endpoint
+    if endpoint in _ONBOARDING_EXEMPT_ENDPOINTS or endpoint == "account_sender_name" \
+            or (endpoint and endpoint.startswith("tracking.")):
+        return None
+    account = db.get_google_account(session["username"]) or db.get_manual_email_account(session["username"])
+    if account is None or account.get("sender_name"):
+        return None
+    if endpoint in _ONBOARDING_GATED_JSON_ENDPOINTS:
+        return {"error": "Set the name to sign your emails as first."}, 403
+    flash("Before anything else — what name should this mailbox's emails sign off as?")
+    return redirect(url_for("account_sender_name"))
+
+
+@app.route("/account/sender-name", methods=["GET", "POST"])
+def account_sender_name():
+    """Asks for (or fixes) the sign-off name for whichever mailbox is
+    currently connected - separate from the login account's own name
+    (see users.html's "Your name" field), since one login can connect a
+    mailbox that's a completely different persona/brand. See
+    db.set_sender_name and sender_for_current_user()."""
+    if not require_login():
+        return redirect(url_for("login"))
+    account = db.get_google_account(session["username"]) or db.get_manual_email_account(session["username"])
+    if account is None:
+        return redirect(url_for("onboarding"))
+    mailbox = account.get("google_email") or account.get("email")
+
+    form = SenderNameForm(sender_name=account.get("sender_name") or "")
+    if form.validate_on_submit():
+        name = form.sender_name.data.strip()
+        db.set_sender_name(session["username"], name)
+        flash(f"Saved — outreach from {mailbox} will now sign off as \"{name}\".")
+        return redirect(url_for("index"))
+    return render_template("sender_name.html", form=form, mailbox=mailbox)
 
 
 @app.route("/logout")
@@ -827,7 +886,10 @@ def connect_gmail_manual():
         return redirect(url_for("login"))
     form = ManualGmailForm()
     if form.validate_on_submit():
-        db.save_manual_email_account(session["username"], form.email.data.strip(), form.app_password.data)
+        db.save_manual_email_account(
+            session["username"], form.email.data.strip(), form.app_password.data,
+            sender_name=form.sender_name.data.strip(),
+        )
         flash(f"Connected {form.email.data.strip()}.")
     else:
         flash("Enter both your Gmail address and an App Password.")

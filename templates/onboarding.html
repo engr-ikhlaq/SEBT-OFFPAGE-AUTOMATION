@@ -68,6 +68,13 @@
                     <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>
                     (needs 2-Step Verification turned on first).
                 </div>
+                <label class="field-label" for="{{ form.sender_name.id }}">Name to sign emails as</label>
+                {{ form.sender_name(id=form.sender_name.id, placeholder="e.g. Maira") }}
+                {% if form.sender_name.errors %}<div class="field-errors">{{ form.sender_name.errors[0] }}</div>{% endif %}
+                <div class="hint" style="margin:-8px 0 14px;">
+                    Shown as "Regards, {this name}" on outreach sent from this mailbox — not necessarily your own
+                    login name, if this inbox represents a different persona or brand.
+                </div>
                 <button type="submit" class="btn-primary" style="width:auto; padding:11px 22px;">Connect</button>
             </form>
         </div>

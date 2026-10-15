@@ -39,6 +39,26 @@ class ManualEmailAccountsDbTests(unittest.TestCase):
         self.assertIsNotNone(db.get_google_account("alice"))
         self.assertIsNotNone(db.get_manual_email_account("alice"))
 
+    def test_sender_name_defaults_to_none_until_set(self):
+        db.save_manual_email_account("alice", "alice@gmail.com", "pass")
+        self.assertIsNone(db.get_manual_email_account("alice")["sender_name"])
+
+    def test_sender_name_can_be_given_at_connect_time(self):
+        db.save_manual_email_account("alice", "alice@gmail.com", "pass", sender_name="Maira")
+        self.assertEqual(db.get_manual_email_account("alice")["sender_name"], "Maira")
+
+    def test_reconnecting_without_a_sender_name_keeps_the_existing_one(self):
+        # A real scenario: updating just the app password shouldn't wipe out
+        # a sender_name that was already set for this mailbox.
+        db.save_manual_email_account("alice", "alice@gmail.com", "old-pass", sender_name="Maira")
+        db.save_manual_email_account("alice", "alice@gmail.com", "new-pass")
+        self.assertEqual(db.get_manual_email_account("alice")["sender_name"], "Maira")
+
+    def test_set_sender_name_updates_an_existing_manual_connection(self):
+        db.save_manual_email_account("alice", "alice@gmail.com", "pass")
+        db.set_sender_name("alice", "Maira")
+        self.assertEqual(db.get_manual_email_account("alice")["sender_name"], "Maira")
+
 
 if __name__ == "__main__":
     unittest.main()

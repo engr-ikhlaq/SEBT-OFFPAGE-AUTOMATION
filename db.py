@@ -192,6 +192,17 @@ _COLUMN_MIGRATIONS = (
     # someone's own email address instead of a real name. Set at signup
     # (see SignupForm) or editable afterward (see /account/name).
     "ALTER TABLE users ADD COLUMN full_name TEXT",
+    # The name to sign AS for this specific mailbox - separate from
+    # users.full_name, which is the LOGIN account's own name. One login
+    # can connect a Gmail that represents a completely different persona
+    # (e.g. a brand inbox like mairablogwrites@gmail.com) - without this,
+    # every outreach email signed off with the login account's name
+    # regardless of which mailbox was actually sending it. Asked for when
+    # connecting (see ManualGmailForm/the OAuth callback), and the
+    # before_request gate below prompts for it on any connection that
+    # predates this column. NULL falls back to _display_name_for(username).
+    "ALTER TABLE google_accounts ADD COLUMN sender_name TEXT",
+    "ALTER TABLE manual_email_accounts ADD COLUMN sender_name TEXT",
 )
 
 
@@ -803,16 +814,21 @@ def purge_orphaned_connections(username: str) -> None:
 # ---------------------------------------------------------------------------
 
 def save_google_account(username: str, google_email: str, refresh_token: str,
-                         access_token: str, sheet_id: str | None) -> None:
-    """Upsert: connecting again (e.g. after revoking) just replaces the row."""
+                         access_token: str, sheet_id: str | None,
+                         sender_name: str | None = None) -> None:
+    """Upsert: connecting again (e.g. after revoking) just replaces the row.
+    sender_name is only overwritten when actually given - COALESCE keeps
+    an already-set name across a silent token refresh/reconnect that
+    doesn't pass one, same reasoning as set_sender_name()'s sibling."""
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO google_accounts (username, google_email, refresh_token, access_token, sheet_id, connected_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO google_accounts (username, google_email, refresh_token, access_token, sheet_id, connected_at, sender_name) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(username) DO UPDATE SET "
             "  google_email=excluded.google_email, refresh_token=excluded.refresh_token, "
-            "  access_token=excluded.access_token, sheet_id=excluded.sheet_id, connected_at=excluded.connected_at",
-            (username, google_email, refresh_token, access_token, sheet_id, now_iso()),
+            "  access_token=excluded.access_token, sheet_id=excluded.sheet_id, connected_at=excluded.connected_at, "
+            "  sender_name=COALESCE(excluded.sender_name, google_accounts.sender_name)",
+            (username, google_email, refresh_token, access_token, sheet_id, now_iso(), sender_name),
         )
 
 
@@ -838,16 +854,36 @@ def delete_google_account(username: str) -> None:
 # Manually-connected Gmail (email + app password, no OAuth setup needed)
 # ---------------------------------------------------------------------------
 
-def save_manual_email_account(username: str, email: str, app_password: str) -> None:
-    """Upsert: connecting again just replaces the stored password."""
+def save_manual_email_account(username: str, email: str, app_password: str,
+                               sender_name: str | None = None) -> None:
+    """Upsert: connecting again just replaces the stored password.
+    sender_name is only overwritten when actually given - COALESCE keeps
+    an already-set name across a reconnect that doesn't pass one."""
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO manual_email_accounts (username, email, app_password, connected_at) "
-            "VALUES (?, ?, ?, ?) "
+            "INSERT INTO manual_email_accounts (username, email, app_password, connected_at, sender_name) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(username) DO UPDATE SET "
-            "  email=excluded.email, app_password=excluded.app_password, connected_at=excluded.connected_at",
-            (username, email, app_password, now_iso()),
+            "  email=excluded.email, app_password=excluded.app_password, connected_at=excluded.connected_at, "
+            "  sender_name=COALESCE(excluded.sender_name, manual_email_accounts.sender_name)",
+            (username, email, app_password, now_iso(), sender_name),
         )
+
+
+def set_sender_name(username: str, sender_name: str) -> None:
+    """Sets the sign-off name for whichever mailbox `username` currently
+    has connected (Google OAuth takes priority, matching
+    sender_for_current_user()'s own order) - see app.py's
+    /account/sender-name, which every connected-but-unnamed account gets
+    routed to."""
+    with get_conn() as conn:
+        updated = conn.execute(
+            "UPDATE google_accounts SET sender_name=? WHERE username=?", (sender_name, username),
+        ).rowcount
+        if not updated:
+            conn.execute(
+                "UPDATE manual_email_accounts SET sender_name=? WHERE username=?", (sender_name, username),
+            )
 
 
 def get_manual_email_account(username: str):

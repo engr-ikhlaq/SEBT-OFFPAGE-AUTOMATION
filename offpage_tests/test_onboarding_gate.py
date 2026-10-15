@@ -46,7 +46,11 @@ class OnboardingGateTests(unittest.TestCase):
         db.init_db()
         db.create_user("alice", "hash", role="member", created_by="owner")
         db.create_user("connected", "hash", role="member", created_by="owner")
-        db.save_manual_email_account("connected", "connected@gmail.com", "app-pass")
+        # sender_name set - this fixture is for exercising the GMAIL-connection
+        # gate specifically; a blank sender_name would instead trip the separate
+        # _require_sender_name gate (see test_sender_name_gate.py), which isn't
+        # what these tests are about.
+        db.save_manual_email_account("connected", "connected@gmail.com", "app-pass", sender_name="Connected User")
 
         # "connected" has no Sheet, so the dashboard falls through to the
         # local-file backend - user_leads_path() returns a RELATIVE path,
