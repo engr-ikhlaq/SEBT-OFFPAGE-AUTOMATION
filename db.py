@@ -135,9 +135,28 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     used_at         TEXT
 );
 
+-- Every scrape anyone starts, for the owner's admin visibility (see
+-- app.py's /admin/search-history) - who searched for what keyword,
+-- targeting which region/language, and what it found. Written at the
+-- moment a scrape starts (see scrape_job.py's _start()), so even a run
+-- that later crashes still shows up, then updated once it ends
+-- (_run_batch()'s final state: finished/stopped/error/awaiting_decision).
+CREATE TABLE IF NOT EXISTS search_history (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL,
+    keyword       TEXT NOT NULL,
+    country       TEXT NOT NULL,
+    language      TEXT NOT NULL,
+    started_at    TEXT NOT NULL,
+    finished_at   TEXT,
+    leads_found   INTEGER NOT NULL DEFAULT 0,
+    final_state   TEXT NOT NULL DEFAULT 'running'
+);
+
 CREATE INDEX IF NOT EXISTS idx_recipients_campaign ON recipients(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_recipients_token ON recipients(token);
 CREATE INDEX IF NOT EXISTS idx_events_recipient ON events(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_search_history_started ON search_history(started_at);
 """
 
 # Columns added after the original schema. SQLite has no "ADD COLUMN IF NOT
@@ -494,6 +513,42 @@ def mark_followed_up(recipient_id: int):
             "UPDATE recipients SET followed_up_at=? WHERE id=?",
             (now_iso(), recipient_id),
         )
+
+
+# ---------------------------------------------------------------------------
+# Scrape search history (owner-only admin visibility - see app.py's
+# /admin/search-history and scrape_job.py)
+# ---------------------------------------------------------------------------
+
+def record_search_start(username: str, keyword: str, country: str, language: str) -> int:
+    """Logged the moment a scrape starts, not when it finishes - so a run
+    that crashes or is left running still shows up in the admin history
+    instead of silently never appearing."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO search_history (username, keyword, country, language, started_at, final_state) "
+            "VALUES (?, ?, ?, ?, ?, 'running')",
+            (username, keyword, country, language, now_iso()),
+        )
+        return cur.lastrowid
+
+
+def record_search_finish(history_id: int, leads_found: int, final_state: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE search_history SET finished_at=?, leads_found=?, final_state=? WHERE id=?",
+            (now_iso(), leads_found, final_state, history_id),
+        )
+
+
+def get_search_history(limit: int = 300):
+    """Every scrape anyone has started, newest first."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM search_history ORDER BY started_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_lead_journeys(username: str | None = None, limit: int = 100):

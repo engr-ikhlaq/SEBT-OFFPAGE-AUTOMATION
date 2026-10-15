@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Search History — Guest Posting Automation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="dashboard-bg">
+{% from "_icons.html" import icon_home, icon_edit, icon_users, icon_logout, icon_clock %}
+<div class="shell">
+
+    <div class="sidebar">
+        <div class="logo">M</div>
+        <a href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
+        <a href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
+        <a class="active" href="{{ url_for('search_history') }}" title="Search history">{{ icon_clock() }}</a>
+        <a href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>
+        <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
+    </div>
+
+    <div class="main">
+        <div class="topbar">
+            <div>
+                <div class="brand-line"><b>Guest Posting Automation</b> &middot; Admin</div>
+                <h1>Search history</h1>
+                <div class="sub">Every scrape anyone has started — keyword, region, language and what it found</div>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+        {% endif %}
+        {% endwith %}
+
+        <div class="panel">
+            <table>
+                <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Keyword</th>
+                    <th>Region</th>
+                    <th>Language</th>
+                    <th>Started</th>
+                    <th>Finished</th>
+                    <th>Leads found</th>
+                    <th>State</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for h in history %}
+                <tr>
+                    <td>{{ h.username }}</td>
+                    <td>{{ h.keyword }}</td>
+                    <td>{{ country_labels.get(h.country, h.country) }}</td>
+                    <td>{{ language_labels.get(h.language, h.language) }}</td>
+                    <td>{{ h.started_at[:19].replace('T', ' ') }} UTC</td>
+                    <td>{{ h.finished_at[:19].replace('T', ' ') + ' UTC' if h.finished_at else '—' }}</td>
+                    <td>{{ h.leads_found }}</td>
+                    <td><span class="role-badge">{{ h.final_state }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="empty">No scrapes have been run yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

@@ -286,6 +286,7 @@ def _google_account_context() -> dict:
         "data_backend_name": backend.name,
         "scraped_leads": scraped_leads,
         "sheet_url": _connected_sheet_url(username, require_owner()),
+        "is_owner": require_owner(),
         "user_sheet": db.get_user_sheet(username),
         "service_account_sheets_configured": data_source.service_account_sheets_configured(),
         "service_account_email": sheets_source.service_account_email(),
@@ -597,7 +598,7 @@ def onboarding():
 # hits (forgot/reset password, unsubscribe, tracking pixels/links).
 _ONBOARDING_EXEMPT_ENDPOINTS = {
     "login", "signup", "logout", "onboarding", "forgot_password", "reset_password",
-    "users", "delete_user", "leave_access", "update_name",
+    "users", "delete_user", "leave_access", "update_name", "search_history",
     "connect_google", "connect_google_callback", "connect_google_disconnect",
     "connect_gmail_manual", "connect_gmail_manual_disconnect",
     "unsubscribe", "static", None,
@@ -689,6 +690,24 @@ def leave_access():
     session.clear()
     flash("You've left this app. Your access has been removed.")
     return redirect(url_for("login"))
+
+
+@app.route("/admin/search-history")
+def search_history():
+    """Owner-only: every scrape anyone has started - who searched for what
+    keyword, targeting which region/language, and what it found. See
+    db.get_search_history() / scrape_job.py's _start()/_run_batch()."""
+    if not require_login():
+        return redirect(url_for("login"))
+    if not require_owner():
+        flash("Only the owner account can view search history.")
+        return redirect(url_for("dashboard"))
+    return render_template(
+        "search_history.html",
+        history=db.get_search_history(),
+        country_labels=COUNTRIES,
+        language_labels=LANGUAGES,
+    )
 
 
 # ---------------------------------------------------------------------------

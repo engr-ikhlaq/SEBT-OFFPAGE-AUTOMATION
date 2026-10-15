@@ -343,15 +343,14 @@ body:not(.dashboard-bg) .btn-stop { color: var(--danger); }
 .modal-btn-ghost { background: transparent; color: rgba(255,255,255,0.5); font-weight: 600 !important; }
 .modal-btn-ghost:hover { color: rgba(255,255,255,0.85); transform: none; box-shadow: none; }
 
-/* ---- dashboard page background: the same photo as the hero, now behind
-   the ENTIRE page, fixed so it doesn't scroll with the content. The shell
-   becomes a dark frosted-glass panel over it; .widget (already dark) and
-   .panel (kept light, for existing table/text styling) need no changes -
-   only the chrome that used to sit directly on the plain light shell
-   (sidebar, topbar text, nav pills, greeting) needs a light-on-dark flip. ---- */
+/* ---- dashboard page background: a plain dark gradient, fixed so it
+   doesn't scroll with the content. The shell becomes a dark frosted-glass
+   panel over it; .widget (already dark) and .panel (kept light, for
+   existing table/text styling) need no changes - only the chrome that
+   used to sit directly on the plain light shell (sidebar, topbar text,
+   nav pills, greeting) needs a light-on-dark flip. ---- */
 body.dashboard-bg {
-  background: linear-gradient(180deg, rgba(6,8,14,0.40), rgba(6,8,14,0.58)),
-              url('images/profile-hero.jpg') center 15% / cover fixed no-repeat;
+  background: linear-gradient(180deg, #0a0d16, #10121b) fixed;
   min-height: 100vh;
 }
 body.dashboard-bg .shell {

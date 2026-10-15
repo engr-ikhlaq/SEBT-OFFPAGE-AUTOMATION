@@ -38,6 +38,7 @@ import requests
 from selenium.common.exceptions import InvalidSessionIdException
 
 import data_source
+import db
 from offpage.authority import AuthorityChecker
 from offpage.browser import BrowserSession, GoogleSearch, PageReader
 from offpage.config import Settings
@@ -184,7 +185,13 @@ def _start(keyword: str, username: str, is_owner: bool, reset_total: bool,
         _status.last_domain = ""
         _status.error = ""
         _status.waiting_captcha = False
-    _thread = threading.Thread(target=_run_batch, args=(keyword, username, is_owner, country, language), daemon=True)
+    # Logged now, not just once the run finishes - an admin should be able
+    # to see a scrape that's still running, or that crashed outright,
+    # not only the ones that completed cleanly.
+    history_id = db.record_search_start(username, keyword, country, language)
+    _thread = threading.Thread(
+        target=_run_batch, args=(keyword, username, is_owner, country, language, history_id), daemon=True
+    )
     _thread.start()
     return True
 
@@ -244,7 +251,8 @@ def _should_stop() -> bool:
 
 
 def _run_batch(keyword: str, username: str, is_owner: bool,
-                country: str = DEFAULT_COUNTRY, language: str = DEFAULT_LANGUAGE) -> None:
+                country: str = DEFAULT_COUNTRY, language: str = DEFAULT_LANGUAGE,
+                history_id: int | None = None) -> None:
     settings = _settings_for_keyword(keyword)
     search_url = home_url(country, language)
     backend = data_source.for_user(username, is_owner)
@@ -316,12 +324,18 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
             _status.error = ("The Chrome window closed before scraping finished - it may have been "
                               "closed by hand, or crashed. Leave it open until a batch completes (use "
                               "the Stop button here instead of closing the window), then start again.")
+            leads_found = _status.queued_total
+        if history_id is not None:
+            db.record_search_finish(history_id, leads_found, "error")
         return
     except Exception as exc:
         log.exception("Scrape job failed")
         with _lock:
             _status.state = "error"
             _status.error = str(exc)
+            leads_found = _status.queued_total
+        if history_id is not None:
+            db.record_search_finish(history_id, leads_found, "error")
         return
 
     with _lock:
@@ -331,3 +345,7 @@ def _run_batch(keyword: str, username: str, is_owner: bool,
             _status.state = "finished"
         else:
             _status.state = "awaiting_decision"
+        final_state = _status.state
+        leads_found = _status.queued_total
+    if history_id is not None:
+        db.record_search_finish(history_id, leads_found, final_state)

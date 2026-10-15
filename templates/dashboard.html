@@ -15,6 +15,7 @@
         <div class="logo">M</div>
         <a class="active" href="{{ url_for('dashboard') }}" title="Dashboard">{{ icon_home() }}</a>
         <a href="{{ url_for('index') }}" title="Compose">{{ icon_edit() }}</a>
+        {% if is_owner %}<a href="{{ url_for('search_history') }}" title="Search history">{{ icon_clock() }}</a>{% endif %}
         {% if is_owner %}<a href="{{ url_for('users') }}" title="Manage access">{{ icon_users() }}</a>{% endif %}
         <a href="{{ url_for('logout') }}" title="Log out">{{ icon_logout() }}</a>
     </div>

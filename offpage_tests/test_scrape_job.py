@@ -2,18 +2,26 @@
 substituted for a fake - these tests never open a browser."""
 from __future__ import annotations
 
+import pathlib
 import sys
+import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import db
 import scrape_job
 
 
 class ScrapeJobStateTests(unittest.TestCase):
     def setUp(self):
+        # _start() logs every scrape to db.search_history (see
+        # db.record_search_start) - isolated here the same way the other
+        # db.py tests are, so this never touches the real tracking.db.
+        db.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "tracking.db"
+        db.init_db()
         scrape_job._status = scrape_job.ScrapeStatus()
         scrape_job._stop_requested = False
         self._real_run_batch = scrape_job._run_batch
@@ -23,7 +31,7 @@ class ScrapeJobStateTests(unittest.TestCase):
 
     def _use_fake_batch(self, found: int, final_state: str = "awaiting_decision"):
         """Fake _run_batch: pretends to find `found` leads, then sets final_state directly."""
-        def fake(keyword, username, is_owner, country=None, language=None):
+        def fake(keyword, username, is_owner, country=None, language=None, history_id=None):
             for i in range(1, found + 1):
                 scrape_job._on_lead(i, type("L", (), {"domain": f"lead{i}.test"})())
             with scrape_job._lock:
@@ -101,7 +109,7 @@ class ScrapeJobStateTests(unittest.TestCase):
 
         received = {}
 
-        def fake_continue(keyword, username, is_owner, country=None, language=None):
+        def fake_continue(keyword, username, is_owner, country=None, language=None, history_id=None):
             received["country"] = country
             received["language"] = language
             with scrape_job._lock:
